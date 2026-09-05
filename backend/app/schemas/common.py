@@ -158,6 +158,21 @@ class HeartbeatIn(BaseModel):
     longitude: float | None = None
     heading: float | None = None
     speed_kmh: float | None = None
+    patrol_mode: str | None = None
+    last_evidence_url: str | None = None
+    last_boxes: list[dict] | None = None
+    person_count: int | None = None
+    overlay_fps: float | None = None
+    overlay_mode: str | None = None
+    overlay_backend: str | None = None
+    infer_ms: float | None = None
+
+
+class AllocateIn(BaseModel):
+    ward_number: int = Field(ge=1, le=999)
+    bus_code: str = Field(min_length=3, max_length=32)
+    phone_code: str = Field(min_length=3, max_length=64)
+    zone: str = ""
 
 
 class SensorBindIn(BaseModel):

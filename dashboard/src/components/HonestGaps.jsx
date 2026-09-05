@@ -3,25 +3,33 @@ import { api } from "../api";
 import { useUi } from "../i18n.jsx";
 
 const GAPS = [
-  { req: "iPhone / any-phone camera", now: "REAL", how: "Web field booth · Safari getUserMedia · same still ingest" },
-  { req: "Live 4-cam NVR", now: "RULE_BASED", how: "Any-camera still bridge (/cctv). Not 24×7 NVR. Cabin cannot invent road defects." },
-  { req: "Continuous YOLO on Azure", now: "DISABLED", how: "On-demand still only. No 24×7 GPU stream." },
-  { req: "Waterlogging neural net", now: "RULE_BASED", how: "Human tap + GPS. Vision tags if Azure Vision is on." },
-  { req: "Indian MoRTH sign model", now: "DISABLED", how: "GIS missing-sign geofence only. No Turkish/Indian classifier." },
+  { req: "iPhone / Android camera", now: "REAL", how: "Phone only: Chrome or Safari /field. ICCC desk is a different login. No CCTV page." },
+  { req: "Windshield boxes", now: "RULE_BASED", how: "On-device 640 India RDD. Road-band + full-frame merge. IoU tracker is persistence, same weights. Overlay is WASM; WebGPU only if the ONNX Runtime GPU EP attaches. Official event is the Azure still. Not a new test mAP." },
+  { req: "Cloud road-damage on stills", now: "REAL", how: "Azure App Service YOLOv8s 640 ONNX CPU. More cores help stills. Not a GPU stream. Cabin bay still cannot invent a road defect." },
+  { req: "ICCC live desk", now: "REAL", how: "Phone pushes overlay ticks on /ws/field-live. Desk listens on /ws/live. Round-trip is tens of ms, not 1 ms." },
+  { req: "Flutter windshield", now: "REAL", how: "Same /field page in a WebView. Not a second detector." },
+  { req: "Pedestrian count this frame", now: "REAL", how: "COCO person on this still/overlay. Not a child detector, not a day-long street census." },
+  { req: "Shake / rash from phone IMU", now: "RULE_BASED", how: "Accelerometer spike. Fast + shake → RASH_DRIVING. Slow + shake → pothole hit." },
+  { req: "Fleet confirm (USP)", now: "RULE_BASED", how: "Second independent bus in 40 m / 6 h confirms. One phone cannot close a city ticket." },
+  { req: "Indian MoRTH sign model", now: "DISABLED", how: "GIS missing-sign geofence only. Not shipped as a classifier." },
   { req: "School-child classifier", now: "RULE_BASED", how: "School geofence + speed drop. No child detector." },
-  { req: "Hit-and-run accident net", now: "RULE_BASED", how: "Speed trigger + optional still. Plate OCR on backend still." },
-  { req: "Calibrated speed / AVL-OD", now: "EXPERIMENTAL", how: "Phone GPS speed uncalibrated. OD demo-flagged." },
-  { req: "Field-accuracy certificate", now: "DISABLED", how: "Not claimed. Demonstration data." },
 ];
 
 export default function HonestGaps() {
   const { t } = useUi();
   const [maps, setMaps] = useState(null);
+  const [composio, setComposio] = useState(null);
   useEffect(() => {
     api("/maps/config").then(setMaps).catch(() => setMaps({ enabled: false }));
+    api("/ai/capabilities").then((c) => setComposio(c.composio || null)).catch(() => setComposio(null));
   }, []);
   const rows = [
     ...GAPS,
+    {
+      req: "Officer ping (Composio)",
+      now: composio?.honesty || "DISABLED",
+      how: composio?.note || "COMPOSIO_API_KEY not set. Fleet confirm still saves.",
+    },
     {
       req: "Azure Maps corridor tiles",
       now: maps?.enabled ? "REAL" : "RULE_BASED",

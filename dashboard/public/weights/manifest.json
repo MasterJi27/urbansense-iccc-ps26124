@@ -1,0 +1,35 @@
+{
+  "rdd": {
+    "file": "rdd_web.onnx",
+    "imgsz": 640,
+    "honesty": "on-device preview of India RDD family \u2014 not a new test mAP",
+    "classes": [
+      {
+        "id": "D00",
+        "name": "Longitudinal crack",
+        "event_type": "ROAD_DAMAGE"
+      },
+      {
+        "id": "D10",
+        "name": "Transverse crack",
+        "event_type": "ROAD_DAMAGE"
+      },
+      {
+        "id": "D20",
+        "name": "Alligator crack",
+        "event_type": "ROAD_DAMAGE"
+      },
+      {
+        "id": "D40",
+        "name": "Pothole",
+        "event_type": "POTHOLE"
+      }
+    ]
+  },
+  "person": {
+    "file": "coco_person.onnx",
+    "imgsz": 320,
+    "honesty": "REAL COCO person on this frame. Not a child detector.",
+    "enabled": true
+  }
+}

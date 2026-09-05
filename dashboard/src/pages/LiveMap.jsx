@@ -1,12 +1,14 @@
-import { MapContainer, CircleMarker, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
+import { MapContainer, CircleMarker, Marker, Popup, useMapEvents } from "react-leaflet";
 import { CorridorTiles, useCorridorTiles } from "../components/CorridorMap.jsx";
 import L from "leaflet";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, getToken } from "../api";
 import HonestyChip from "../components/HonestyChip.jsx";
+import LiveFeed from "../components/LiveFeed.jsx";
 import { useUi } from "../i18n.jsx";
-import { isMonsoon, isVru } from "../honesty.js";
+import { dualHonesty, isMonsoon, isVru } from "../honesty.js";
+import { mergeEventRow, mergeLiveSensor, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 const color = { CRITICAL: "#e5484d", HIGH: "#ef7a18", MEDIUM: "#b7790f", LOW: "#0bb98a" };
 const rank = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
@@ -49,19 +51,63 @@ export default function LiveMap() {
   const [zoom, setZoom] = useState(12);
   const [clusterOn, setClusterOn] = useState(true);
   const [heatOn, setHeatOn] = useState(true);
-  const [flowsOn, setFlowsOn] = useState(false);
-  const [od, setOd] = useState([]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [show, setShow] = useState({ sensors: true, assets: true, segments: true });
 
   useEffect(() => {
-    Promise.all([api("/events?limit=200"), api("/sensor-nodes"), api("/assets"), api("/road-health"), api("/analytics/od").catch(()=>[])])
-      .then(([e, s, a, r, o]) => { setEvents(e); setSensors(s); setAssets(a); setSegs(r); setOd(Array.isArray(o) ? o : []); })
+    Promise.all([api("/events?limit=200"), api("/sensor-nodes"), api("/assets"), api("/road-health")])
+      .then(([e, s, a, r]) => { setEvents(e); setSensors(s); setAssets(a); setSegs(r); })
       .catch((ex) => setErr(ex.message));
+    const token = getToken();
+    const stopLive = openAuthedSocket("/ws/live", token, (m) => {
+      try {
+        const msg = JSON.parse(m.data);
+        setSensors((prev) => mergeLiveSensor(prev, msg));
+      } catch { /* ignore */ }
+    });
+    const stopEvents = openAuthedSocket("/ws/events", token, (m) => {
+      try {
+        const msg = JSON.parse(m.data);
+        if (msg.event) setEvents((prev) => mergeEventRow(prev, msg.event, 200));
+      } catch { /* ignore */ }
+    });
+    const stopSensorPoll = pollJson("/sensor-nodes", (s) => {
+      if (Array.isArray(s)) {
+        setSensors((prev) => {
+          const live = Array.isArray(prev) ? prev : [];
+          const byCode = new Map(live.map((row) => [row.code || row.id, row]));
+          for (const row of s) {
+            const key = row.code || row.id;
+            const had = byCode.get(key) || {};
+            byCode.set(key, {
+              ...row,
+              last_boxes: (row.last_boxes && row.last_boxes.length) ? row.last_boxes : (had.last_boxes || []),
+              overlay_mode: row.overlay_mode || had.overlay_mode,
+              overlay_backend: row.overlay_backend || had.overlay_backend,
+              overlay_fps: row.overlay_fps || had.overlay_fps,
+              infer_ms: row.infer_ms || had.infer_ms,
+              seen_at: had.seen_at || (row.last_heartbeat_at ? Date.parse(row.last_heartbeat_at) : 0),
+            });
+          }
+          return [...byCode.values()];
+        });
+      }
+    }, 1000);
+    const stopEventPoll = pollJson("/events?limit=200", (e) => {
+      if (Array.isArray(e)) setEvents(e);
+    }, 2000);
+    return () => {
+      stopLive();
+      stopEvents();
+      stopSensorPoll();
+      stopEventPoll();
+    };
   }, []);
 
   const filtered = useMemo(() => {
     return events.filter((e)=>{
+      if (dualHonesty(e).seed) return false;
+      if (e.event_type === "WATERLOGGING") return false;
       if (sev !== "ALL" && e.severity !== sev) return false;
       if (typeF !== "ALL" && e.event_type !== typeF) return false;
       if (q && !(`${e.public_code} ${e.event_type} ${e.status}`.toLowerCase().includes(q.toLowerCase()))) return false;
@@ -79,24 +125,6 @@ export default function LiveMap() {
 
   const types = [...new Set(events.map(e=>e.event_type))].sort();
   const clusteredCount = clusters.filter((c) => c.count > 1).length;
-
-  const flows = useMemo(() => {
-    const parseLatLon = (s) => {
-      if (typeof s !== "string") return null;
-      const parts = s.split(",");
-      if (parts.length !== 2) return null;
-      const lat = parseFloat(parts[0].trim());
-      const lon = parseFloat(parts[1].trim());
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return [lat, lon];
-    };
-    return (Array.isArray(od) ? od : []).map((d) => {
-      const o = parseLatLon(d.origin);
-      const t = parseLatLon(d.destination);
-      if (!o || !t) return null;
-      return { o, t, route_code: d.route_code, trips: d.trips };
-    }).filter(Boolean).slice(0, 12);
-  }, [od]);
 
   if (err) return <p className="err">{err}</p>;
 
@@ -125,11 +153,12 @@ export default function LiveMap() {
           <div>
             <b>{monsoon ? t("monsoon") : t("schoolZone")}</b>
             {monsoon
-              ? "Waterlogging pins are SIMULATED / inspector workflow — not a flood neural net. Violet dashed ring."
-              : "School / VRU overlay uses PEDESTRIAN_RISK + SCHOOL_CROSSING (bbox proximity, RULE_BASED). Blue dashed ring."}
+              ? "Monsoon filter is off the map until a real flood model ships. School / VRU overlay stays."
+              : "School / VRU overlay uses PEDESTRIAN_RISK + SCHOOL_CROSSING (bbox proximity)."}
           </div>
         </div>
       )}
+      <LiveFeed sensors={sensors} />
       <div className="livemap-grid">
         <div className="maprail">
           <MapContainer center={[28.62, 77.22]} zoom={12} style={{ height: 640 }}>
@@ -179,11 +208,14 @@ export default function LiveMap() {
                 </Popup>
               </Marker>
             ))}
-            {show.sensors && sensors.filter((s) => s.latitude).map((s) => (
-              <CircleMarker key={s.id} center={[s.latitude, s.longitude]} radius={5} pathOptions={{ color: "var(--text)", fillColor:"var(--info)", fillOpacity:.9, weight:1 }}>
-                <Popup>Sensor {s.code} {s.bus_code} • {s.processing_mode}</Popup>
-              </CircleMarker>
-            ))}
+            {show.sensors && sensors.filter((s) => s.latitude).map((s) => {
+              const hot = (s.last_boxes || []).length > 0;
+              return (
+                <CircleMarker key={s.id} center={[s.latitude, s.longitude]} radius={hot ? 10 : 5} pathOptions={{ color: "var(--text)", fillColor: hot ? "#e5484d" : "var(--info)", fillOpacity: .9, weight: 1 }}>
+                  <Popup>Sensor {s.code} {s.bus_code} · people {s.person_count || 0} · boxes {(s.last_boxes || []).length} · {s.overlay_mode || s.processing_mode}</Popup>
+                </CircleMarker>
+              );
+            })}
             {show.assets && assets.map((a) => (
               <CircleMarker key={a.id} center={[a.latitude, a.longitude]} radius={4} pathOptions={{ color: "var(--violet)", fillColor:"var(--violet)", fillOpacity:.9 }}>
                 <Popup><Link to={`/assets/${a.id}`}>{a.code}</Link> {a.asset_type} • {a.condition}</Popup>
@@ -193,11 +225,6 @@ export default function LiveMap() {
               <CircleMarker key={s.id} center={[s.latitude, s.longitude]} radius={12} pathOptions={{ color: s.health_score < 50 ? color.CRITICAL : color.LOW, fillOpacity: 0.12, weight:1 }}>
                 <Popup>{s.name} health {Number(s.health_score).toFixed(0)}</Popup>
               </CircleMarker>
-            ))}
-            {flowsOn && flows.map((f, i) => (
-              <Polyline key={`od-${i}`} positions={[f.o, f.t]} pathOptions={{ color: "var(--info)", weight: 2, opacity: 0.5, dashArray: "6 6" }}>
-                <Popup>{f.route_code} • {f.trips} trips</Popup>
-              </Polyline>
             ))}
           </MapContainer>
           <div className="legend">
@@ -217,11 +244,7 @@ export default function LiveMap() {
             <label className="stat-row" style={{cursor:"pointer"}}><span><input type="checkbox" checked={show.segments} onChange={e=>setShow(s=>({...s,segments:e.target.checked}))}/> Road segments</span><span className="muted table-num">{segs.length}</span></label>
             <label className="stat-row" style={{cursor:"pointer"}}><span><input type="checkbox" checked={clusterOn} onChange={e=>setClusterOn(e.target.checked)}/> Clustering</span><span className="muted table-num">{clusters.length} pins</span></label>
             <label className="stat-row" style={{cursor:"pointer"}} aria-pressed={heatOn}><span><input type="checkbox" checked={heatOn} onChange={e=>setHeatOn(e.target.checked)}/> {t("heat")}</span><span className="muted">HIGH/CRITICAL</span></label>
-            <label className="stat-row" style={{cursor:"pointer"}} aria-pressed={flowsOn}><span><input type="checkbox" checked={flowsOn} onChange={e=>setFlowsOn(e.target.checked)}/> {t("odFlows")}</span><span className="muted table-num">{od.length}</span></label>
-            <div className="muted" style={{fontSize:12,marginTop:8}}>Dashed blue ring = school / VRU (bbox proximity, RULE_BASED). Violet ring = waterlogging (SIMULATED, not neural).</div>
-            <div className="muted" style={{fontSize:12,marginTop:8}}>Big dot holds 2 or more reports from different sources. Faded dot is RESOLVED.</div>
-            <div className="muted" style={{fontSize:12,marginTop:4}}>Orange halo marks HIGH or CRITICAL density.</div>
-            <div className="muted" style={{fontSize:12,marginTop:4}}>Dashed blue = OD trips flow.</div>
+            <div className="muted" style={{fontSize:12,marginTop:8}}>Dashed blue ring = school / VRU (bbox proximity). Big dot = 2+ reports from different buses.</div>
           </div>
 
           <div className="card">

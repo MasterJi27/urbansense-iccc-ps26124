@@ -2,19 +2,30 @@ import { CircleMarker, Popup } from "react-leaflet";
 import CorridorMap, { useCorridorTiles } from "../components/CorridorMap.jsx";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, getToken, wsUrl } from "../api";
+import { api, getToken } from "../api";
 import { Skeleton } from "../components/Skeleton.jsx";
 import HonestyChip from "../components/HonestyChip.jsx";
 import ConfirmationStrip from "../components/ConfirmationStrip.jsx";
 import FieldBoothCard from "../components/FieldBoothCard.jsx";
-import CctvBoothCard from "../components/CctvBoothCard.jsx";
 import HonestGaps from "../components/HonestGaps.jsx";
+import LiveFeed from "../components/LiveFeed.jsx";
 import { useUi } from "../i18n.jsx";
 import DemoTruth from "../components/DemoTruth.jsx";
-import { isMonsoon, isVru, patrolLabel } from "../honesty.js";
-import { useToast } from "../components/Toast.jsx";
+import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
+import { mergeEventRow, mergeLiveSensor, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 const color = { CRITICAL: "#e5484d", HIGH: "#ef7a18", MEDIUM: "#b7790f", LOW: "#0bb98a" };
+
+const EMPTY_SUMMARY = {
+  active_buses: 0,
+  active_sensors: 0,
+  total_sensors: 0,
+  total_events: 0,
+  critical_events: 0,
+  unverified_events: 0,
+  road_health: 0,
+  open_work_orders: 0,
+};
 
 export default function Overview() {
   const { t, monsoon, setMonsoon, vru, setVru } = useUi();
@@ -26,26 +37,21 @@ export default function Overview() {
   const [ps, setPs] = useState(null);
   const [filter, setFilter] = useState("ALL");
   const [err, setErr] = useState("");
-  const [jury, setJury] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("urbansense_jury_run") || "null"); } catch { return null; }
-  });
-  const [juryBusy, setJuryBusy] = useState(false);
   const [heroLedger, setHeroLedger] = useState(null);
-  const toast = useToast();
   const tiles = useCorridorTiles();
 
   useEffect(() => {
     Promise.all([
-      api("/analytics/summary"),
-      api("/events?limit=40"),
+      api("/analytics/summary").catch(() => null),
+      api("/events?limit=40").catch(() => []),
       api("/buses").catch(() => []),
       api("/sensor-nodes").catch(() => []),
       api("/ai/capabilities").catch(() => null),
       api("/ai/ps26124").catch(() => null),
     ])
       .then(([s, e, b, sn, caps, coverage]) => {
-        setSum(s);
-        setEvents(e);
+        setSum(s || EMPTY_SUMMARY);
+        setEvents(Array.isArray(e) ? e : []);
         setBuses(b || []);
         setSensors(sn || []);
         if (caps) setRealEngines(Object.values(caps).filter((v) => v && v.ai_status === "REAL").length);
@@ -53,22 +59,57 @@ export default function Overview() {
       })
       .catch((ex) => setErr(ex.message));
     const token = getToken();
-    const ws = new WebSocket(wsUrl("/ws/events", token));
-    ws.onmessage = (m) => {
+    const stopEvents = openAuthedSocket("/ws/events", token, (m) => {
       try {
         const msg = JSON.parse(m.data);
-        if (msg.event) setEvents((prev) => [msg.event, ...prev.filter((x) => x.id !== msg.event.id)].slice(0, 40));
+        if (msg.event) setEvents((prev) => mergeEventRow(prev, msg.event, 40));
       } catch {}
+    });
+    const stopLive = openAuthedSocket("/ws/live", token, (m) => {
+      try {
+        const msg = JSON.parse(m.data);
+        setSensors((prev) => mergeLiveSensor(prev, msg));
+      } catch {}
+    });
+    const stopEventPoll = pollJson("/events?limit=40", (e) => {
+      if (Array.isArray(e)) setEvents(e);
+    }, 2000);
+    const stopSensorPoll = pollJson("/sensor-nodes", (sn) => {
+      if (!Array.isArray(sn)) return;
+      setSensors((prev) => {
+        const live = Array.isArray(prev) ? prev : [];
+        const byCode = new Map(live.map((s) => [s.code || s.id, s]));
+        for (const row of sn) {
+          const key = row.code || row.id;
+          const had = byCode.get(key) || {};
+          byCode.set(key, {
+            ...row,
+            last_boxes: (row.last_boxes && row.last_boxes.length) ? row.last_boxes : (had.last_boxes || []),
+            overlay_mode: row.overlay_mode || had.overlay_mode,
+            overlay_backend: row.overlay_backend || had.overlay_backend,
+            overlay_fps: row.overlay_fps || had.overlay_fps,
+            infer_ms: row.infer_ms || had.infer_ms,
+            seen_at: had.seen_at || (row.last_heartbeat_at ? Date.parse(row.last_heartbeat_at) : 0),
+          });
+        }
+        return [...byCode.values()];
+      });
+    }, 1000);
+    return () => {
+      stopEvents();
+      stopLive();
+      stopEventPoll();
+      stopSensorPoll();
     };
-    return () => ws.close();
   }, []);
 
-  const fused = events.find((e) => (e.extra || {}).patrol_state === "FLEET_CONFIRMED" && e.event_type === "POTHOLE")
-    || events.find((e) => (e.extra || {}).patrol_state === "REPAIR_VERIFIED" && e.event_type === "POTHOLE")
-    || events.find((e) => (e.extra || {}).patrol_state === "FLEET_CONFIRMED")
-    || events.find((e) => e.event_type === "POTHOLE" && e.status === "UNVERIFIED")
-    || events.find((e) => e.event_type === "POTHOLE")
-    || events[0];
+  const liveEvents = events.filter((e) => !dualHonesty(e).seed && e.event_type !== "WATERLOGGING");
+  const fused = liveEvents.find((e) => (e.extra || {}).patrol_state === "FLEET_CONFIRMED" && e.event_type === "POTHOLE")
+    || liveEvents.find((e) => (e.extra || {}).patrol_state === "REPAIR_VERIFIED" && e.event_type === "POTHOLE")
+    || liveEvents.find((e) => (e.extra || {}).patrol_state === "FLEET_CONFIRMED")
+    || liveEvents.find((e) => e.event_type === "POTHOLE" && e.status === "UNVERIFIED")
+    || liveEvents.find((e) => e.event_type === "POTHOLE")
+    || liveEvents[0];
 
   useEffect(() => {
     if (!fused?.id) { setHeroLedger(null); return; }
@@ -103,34 +144,18 @@ export default function Overview() {
     </div>
   );
 
-  async function runJury() {
-    setJuryBusy(true);
-    try {
-      const body = await api("/demo/jury-run", { method: "POST", body: "{}" });
-      try { sessionStorage.setItem("urbansense_jury_run", JSON.stringify(body)); } catch { /* ignore */ }
-      setJury(body);
-      const evs = await api("/events?limit=40");
-      setEvents(evs);
-      toast.success("Jury run ready — walk the checklist");
-    } catch (e) {
-      toast.error(e.message);
-    } finally {
-      setJuryBusy(false);
-    }
-  }
-
-  const filtered = events.filter((e) => {
+  const filtered = liveEvents.filter((e) => {
     if (filter !== "ALL" && e.severity !== filter) return false;
     if (vru || monsoon) {
       if (!((vru && isVru(e)) || (monsoon && isMonsoon(e)))) return false;
     }
     return true;
   });
-  const needsAttention = [...events]
+  const needsAttention = [...liveEvents]
     .filter((e) => (e.severity === "CRITICAL" || e.severity === "HIGH") && e.status === "UNVERIFIED")
     .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || new Date(b.timestamp || b.created_at || b.updated_at) - new Date(a.timestamp || a.created_at || a.updated_at))
     .slice(0, 5);
-  const attentionTotal = events.filter((e) => (e.severity === "CRITICAL" || e.severity === "HIGH") && e.status === "UNVERIFIED").length;
+  const attentionTotal = liveEvents.filter((e) => (e.severity === "CRITICAL" || e.severity === "HIGH") && e.status === "UNVERIFIED").length;
 
   return (
     <div>
@@ -149,36 +174,18 @@ export default function Overview() {
           ))}
           <button className={`chip ${vru?"active":""}`} onClick={()=>setVru((v)=>!v)} aria-pressed={vru}>{t("schoolZone")}</button>
           <button className={`chip ${monsoon?"active":""}`} onClick={()=>setMonsoon((v)=>!v)} aria-pressed={monsoon}>{t("monsoon")}</button>
-          <button className="btn" type="button" disabled={juryBusy} onClick={runJury}>{juryBusy ? "Running…" : t("juryRun")}</button>
         </div>
       </div>
 
       <ConfirmationStrip event={fused} ledger={heroLedger} />
 
+      <LiveFeed sensors={sensors} />
+
       <DemoTruth events={events} realEngines={realEngines} />
 
       <FieldBoothCard />
 
-      <CctvBoothCard />
-
       <HonestGaps />
-
-      {jury && (
-        <div className="card" style={{ marginBottom: 12 }}>
-          <h4>JURY RUN — 8 min checklist</h4>
-          <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{jury.usp || "Fleet confirms. One bus cannot."} {t("uspAbsence")}</p>
-          <ol className="jury-checklist">
-            {(jury.steps || []).map((step, i) => (
-              <li key={`${step.event_id || step.public_code || i}`}>
-                <span className="muted table-num">{String(i + 1).padStart(2, "0")}</span>
-                {step.url ? <Link className="evlink" to={step.url}>{step.public_code}</Link> : <span className="mono">{step.public_code}</span>}
-                <span>{step.ps_line}</span>
-                {step.patrol_state && <span className={`tag ${step.patrol_state === "FLEET_CONFIRMED" ? "real" : "info"}`}>{step.patrol_state}</span>}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
 
       {ps && (
         <div className="card" style={{ marginBottom: 12 }}>
@@ -187,7 +194,7 @@ export default function Overview() {
           <div className="stat-row"><span className="muted">Camera bays</span><b className="mono" style={{ fontSize: 12 }}>{(ps.camera_bays || []).join(" · ")}</b></div>
           <div className="stat-row"><span className="muted">Coverage</span><b className="table-num">{Object.entries(ps.counts || {}).map(([k, v]) => `${v} ${k}`).join(" · ")}</b></div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 10 }}>
-            {(ps.items || []).map((row) => (
+            {(ps.items || []).filter((row) => row.status === "REAL" || row.status === "RULE_BASED").map((row) => (
               <div key={row.id} className="stat-row" style={{ margin: 0 }}>
                 <span style={{ fontSize: 12 }}>{row.requirement}</span>
                 <span className={`tag ${row.status === "REAL" ? "real" : row.status === "RULE_BASED" ? "rule" : row.status === "DISABLED" ? "off" : "sim"}`} style={{ fontSize: 10 }}>{row.status}</span>
@@ -291,6 +298,19 @@ export default function Overview() {
                 <Popup><Link to={`/events/${e.id}`}>{e.public_code}</Link> · {e.event_type}</Popup>
               </CircleMarker>
             ))}
+            {sensors.filter((s) => s.latitude != null && s.longitude != null).map((s) => {
+              const hot = (s.last_boxes || []).length > 0;
+              return (
+                <CircleMarker
+                  key={`live-${s.id || s.code}`}
+                  center={[s.latitude, s.longitude]}
+                  radius={hot ? 10 : 6}
+                  pathOptions={{ color: "#111", fillColor: hot ? "#e5484d" : "#5b8def", fillOpacity: 0.9, weight: 1 }}
+                >
+                  <Popup>{s.bus_code || s.code} · people {s.person_count || 0} · boxes {(s.last_boxes || []).length}</Popup>
+                </CircleMarker>
+              );
+            })}
           </CorridorMap>
         </div>
       </div>

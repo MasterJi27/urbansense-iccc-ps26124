@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-train/
 venv/
 node_modules/
 dist/
@@ -34,10 +35,15 @@ storage/evidence/*
 *.log
 coverage/
 htmlcov/
+dashboard/public/ort/
+dashboard/public/weights/*.onnx
 .DS_Store
 .azure/*/
 !.azure/deployment-plan.md
 models/**/*.pt
 models/**/*.onnx
+models/**/runs/
+runs/
 *.part
+.data/
 

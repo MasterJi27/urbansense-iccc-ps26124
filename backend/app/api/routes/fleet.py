@@ -1,6 +1,7 @@
+import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,8 +9,48 @@ from app.deps import get_current_user, require_roles
 from app.models.event import SourceType
 from app.models.fleet import Bus, ProcessingMode, Route, SensorNode, Trip
 from app.models.user import User, UserRole
+from app.realtime.hub import hub
 from app.schemas.common import BusIn, HeartbeatIn, SensorBindIn, TripIn
 from app.services.fusion import record_clear_passes
+
+
+def _clip_live_boxes(rows: list | None) -> list[dict]:
+    out: list[dict] = []
+    for row in (rows or [])[:12]:
+        if not isinstance(row, dict):
+            continue
+        bbox = row.get("bbox") or []
+        if len(bbox) < 4:
+            continue
+        try:
+            out.append(
+                {
+                    "klass": str(row.get("klass") or row.get("event_type") or "")[:64],
+                    "event_type": str(row.get("event_type") or "")[:32],
+                    "confidence": float(row.get("confidence") or 0),
+                    "bbox": [float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])],
+                }
+            )
+            tid = str(row.get("track_id") or "")[:32]
+            if tid:
+                out[-1]["track_id"] = tid
+            hits = row.get("hits")
+            if hits is not None:
+                out[-1]["hits"] = max(0, min(int(hits), 999))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _parse_boxes(raw: str | None) -> list:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
+
 
 router = APIRouter(tags=["fleet"])
 
@@ -93,9 +134,13 @@ def list_sensors(db: Session = Depends(get_db), _: User = Depends(get_current_us
                 "longitude": s.longitude,
                 "heading": s.heading,
                 "speed_kmh": s.speed_kmh,
+                "last_boxes": _parse_boxes(s.last_boxes_json),
+                "person_count": s.person_count,
+                "overlay_fps": s.overlay_fps,
             }
         )
     return out
+
 
 
 @router.post("/sensor-nodes")
@@ -121,7 +166,12 @@ def bind_sensor(body: SensorBindIn, db: Session = Depends(get_db), user: User = 
 
 
 @router.post("/sensor-nodes/heartbeat")
-def heartbeat(body: HeartbeatIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def heartbeat(
+    body: HeartbeatIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     node = None
     if body.sensor_id:
         node = db.get(SensorNode, body.sensor_id)
@@ -149,6 +199,13 @@ def heartbeat(body: HeartbeatIn, db: Session = Depends(get_db), _: User = Depend
     node.heading = body.heading
     node.speed_kmh = body.speed_kmh
     node.last_heartbeat_at = datetime.now(timezone.utc)
+    boxes = _clip_live_boxes(body.last_boxes)
+    if body.last_boxes is not None:
+        node.last_boxes_json = json.dumps(boxes)
+    if body.person_count is not None:
+        node.person_count = int(body.person_count)
+    if body.overlay_fps is not None:
+        node.overlay_fps = float(body.overlay_fps)
     if body.processing_mode:
         try:
             node.processing_mode = ProcessingMode(body.processing_mode)
@@ -173,6 +230,23 @@ def heartbeat(body: HeartbeatIn, db: Session = Depends(get_db), _: User = Depend
         source_type=SourceType.PHONE,
     )
     db.commit()
+    live = {
+        "type": "live.heartbeat",
+        "sensor_id": node.id,
+        "sensor_code": node.code,
+        "bus_code": body.bus_code,
+        "latitude": node.latitude,
+        "longitude": node.longitude,
+        "heading": node.heading,
+        "last_boxes": boxes if body.last_boxes is not None else _parse_boxes(node.last_boxes_json),
+        "person_count": node.person_count or 0,
+        "overlay_fps": node.overlay_fps,
+        "overlay_mode": body.overlay_mode,
+        "overlay_backend": body.overlay_backend,
+        "infer_ms": body.infer_ms,
+        "ai_mode": node.ai_mode,
+    }
+    background.add_task(hub.broadcast, live, "live")
     return {
         "ok": True,
         "sensor_id": node.id,
