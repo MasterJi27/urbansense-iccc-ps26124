@@ -1,0 +1,19 @@
+name: urbansense
+metadata:
+  template: urbansense-sih@0.1.0
+infra:
+  provider: bicep
+  path: infra
+services:
+  api:
+    project: ./backend
+    language: python
+    host: appservice
+hooks:
+  prepackage:
+    windows:
+      shell: pwsh
+      run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/package-dashboard.ps1
+    posix:
+      shell: sh
+      run: ./scripts/package-dashboard.sh

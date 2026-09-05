@@ -1,0 +1,8 @@
+# Optional AI runtime (do not merge into backend/requirements.txt blindly)
+ultralytics>=8.2.0
+opencv-python>=4.8.0
+numpy>=1.24
+lap>=0.5.12  # ByteTrack assignment solver (ultralytics auto-requirement)
+fast-alpr>=0.4.0  # YOLOv9-t ONNX plate detector (hub download ~7MB)
+fast-plate-ocr[onnx]>=1.1.0  # global OCR recognizer (pulls onnxruntime CPU)
+# pytesseract  # optional ANPR fallback; requires OS Tesseract

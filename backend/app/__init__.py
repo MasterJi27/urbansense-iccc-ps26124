@@ -1,0 +1,1 @@
+"""UrbanSense backend — source of truth for observations, events, assets, and work orders."""
