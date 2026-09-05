@@ -25,6 +25,38 @@ def test_phone_still_without_azure_vision(client, admin_token, tmp_path, monkeyp
     assert body["event"]["event_type"] == "POTHOLE"
 
 
+def test_phone_still_field_iphone_is_not_a_bus_fk(client, admin_token, tmp_path, monkeypatch):
+    monkeypatch.setenv("EVIDENCE_DIR", str(tmp_path))
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("field.jpg", JPEG, "image/jpeg")},
+        data={"latitude": "28.61", "longitude": "77.21", "source_id": "FIELD-IPHONE", "bus_id": "FIELD-IPHONE"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["observation"]["source_id"] == "FIELD-IPHONE"
+    assert body["observation"]["bus_id"] is None
+
+
+def test_phone_still_resolves_bus_code(client, admin_token, tmp_path, monkeypatch):
+    monkeypatch.setenv("EVIDENCE_DIR", str(tmp_path))
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("bus.jpg", JPEG, "image/jpeg")},
+        data={"latitude": "28.61", "longitude": "77.21", "source_id": "BUS-042-FRONT", "bus_id": "BUS-042", "imu_mag": "1.9"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["observation"]["bus_id"]
+
+
 def test_phone_still_rejects_empty(client, admin_token):
     r = client.post(
         "/ingest/phone/still",
@@ -40,6 +72,17 @@ def test_phone_still_rejects_non_image(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("notes.txt", b"hello-not-an-image", "text/plain")},
+        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
+    )
+    assert r.status_code == 400
+
+
+def test_phone_still_rejects_oversize(client, admin_token):
+    huge = b"\xff\xd8" + (b"\x00" * 3_600_000)
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("huge.jpg", huge, "image/jpeg")},
         data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
     )
     assert r.status_code == 400

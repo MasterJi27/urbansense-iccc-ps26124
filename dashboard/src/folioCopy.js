@@ -76,11 +76,19 @@ export const NAV_TABS = [
   { to: "/road-health", hi: "वार्ड", en: "WARD" },
 ];
 
-export const MORE_TABS = [
+export const CAPTURE_TABS = [
+  { to: "/field", hi: "फ़ील्ड", en: "FIELD" },
+  { to: "/cctv", hi: "सीसीटीवी", en: "CCTV" },
+];
+
+export const ATLAS_TABS = [
   { to: "/map", hi: "मानचित्र", en: "MAP" },
   { to: "/fleet", hi: "बेड़ा", en: "FLEET" },
-  { to: "/assets", hi: "संपत्ति", en: "ASSETS" },
   { to: "/bridge", hi: "पुल", en: "BRIDGE" },
+];
+
+export const MORE_TABS = [
+  { to: "/assets", hi: "संपत्ति", en: "ASSETS" },
   { to: "/analytics", hi: "विश्लेषण", en: "ANALYTICS" },
   { to: "/sensors", hi: "सेंसर", en: "SENSORS" },
   { to: "/settings", hi: "सेटिंग", en: "SETTINGS" },

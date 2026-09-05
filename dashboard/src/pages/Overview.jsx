@@ -1,10 +1,14 @@
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import { CircleMarker, Popup } from "react-leaflet";
+import CorridorMap, { useCorridorTiles } from "../components/CorridorMap.jsx";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, getToken, wsUrl } from "../api";
 import { Skeleton } from "../components/Skeleton.jsx";
 import HonestyChip from "../components/HonestyChip.jsx";
 import ConfirmationStrip from "../components/ConfirmationStrip.jsx";
+import FieldBoothCard from "../components/FieldBoothCard.jsx";
+import CctvBoothCard from "../components/CctvBoothCard.jsx";
+import HonestGaps from "../components/HonestGaps.jsx";
 import { useUi } from "../i18n.jsx";
 import DemoTruth from "../components/DemoTruth.jsx";
 import { isMonsoon, isVru, patrolLabel } from "../honesty.js";
@@ -28,6 +32,7 @@ export default function Overview() {
   const [juryBusy, setJuryBusy] = useState(false);
   const [heroLedger, setHeroLedger] = useState(null);
   const toast = useToast();
+  const tiles = useCorridorTiles();
 
   useEffect(() => {
     Promise.all([
@@ -152,6 +157,12 @@ export default function Overview() {
 
       <DemoTruth events={events} realEngines={realEngines} />
 
+      <FieldBoothCard />
+
+      <CctvBoothCard />
+
+      <HonestGaps />
+
       {jury && (
         <div className="card" style={{ marginBottom: 12 }}>
           <h4>JURY RUN — 8 min checklist</h4>
@@ -272,16 +283,15 @@ export default function Overview() {
         </div>
         <div className="maprail">
           <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)" }}>
-            <h4 style={{ margin: 0 }}>Map</h4>
+            <h4 style={{ margin: 0 }}>Map · {tiles.caption}</h4>
           </div>
-          <MapContainer center={[28.62, 77.22]} zoom={11} style={{ height: 320 }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OSM" />
+          <CorridorMap center={[28.62, 77.22]} zoom={11} height={320} hideCaption>
             {filtered.map((e) => (
               <CircleMarker key={e.id} center={[e.latitude, e.longitude]} radius={e.observation_count > 1 ? 10 : 6} pathOptions={{ color: color[e.severity] || "#155a8a", fillColor: color[e.severity] || "#155a8a", fillOpacity: 0.28, weight: 2 }}>
                 <Popup><Link to={`/events/${e.id}`}>{e.public_code}</Link> · {e.event_type}</Popup>
               </CircleMarker>
             ))}
-          </MapContainer>
+          </CorridorMap>
         </div>
       </div>
     </div>

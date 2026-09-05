@@ -13,6 +13,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
+      "/health": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
+      "/maps": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
       "/ws": {
         target: "ws://127.0.0.1:8000",
         ws: true,

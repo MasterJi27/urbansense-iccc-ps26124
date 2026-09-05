@@ -14,11 +14,24 @@ class TokenOut(BaseModel):
     role: UserRole
     user_id: str
     full_name: str
+    scope: str = "iccc"
 
 
 class LoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class FieldJoinIn(BaseModel):
+    code: str = Field(min_length=4, max_length=16)
+
+
+class FieldBoothOut(BaseModel):
+    code: str
+    expires_in: int
+    redeemed: bool = False
+    join_path: str = "/field"
+    note: str = "iPhone Safari opens /field, enters this PIN once, uses the phone camera. No Flutter install."
 
 
 class RegisterIn(BaseModel):
@@ -38,15 +51,19 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MeOut(UserOut):
+    scope: str = "iccc"
+
+
 class ObservationIn(BaseModel):
     event_type: EventType
     severity: Severity = Severity.MEDIUM
-    latitude: float
-    longitude: float
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
     gps_accuracy: float | None = None
     timestamp: datetime | None = None
     source_type: SourceType = SourceType.PHONE
-    source_id: str
+    source_id: str = Field(min_length=1, max_length=80)
     sensor_id: str | None = None
     bus_id: str | None = None
     route_id: str | None = None
@@ -54,7 +71,7 @@ class ObservationIn(BaseModel):
     simulated: bool = False
     heading: float | None = None
     speed_kmh: float | None = None
-    plate_text: str | None = None
+    plate_text: str | None = Field(default=None, max_length=32)
     plate_confidence: float | None = None
     evidence_url: str | None = None
     thumbnail_url: str | None = None
@@ -149,6 +166,26 @@ class SensorBindIn(BaseModel):
     device_label: str = "PHONE"
 
 
+class CameraIn(BaseModel):
+    code: str = Field(min_length=3, max_length=64)
+    vendor: str = "GENERIC"
+    bay: str = "FRONT"
+    bus_code: str | None = None
+    kind: str = "BUS_CCTV"
+    label: str = ""
+
+
+class CameraPullIn(BaseModel):
+    snapshot_url: str
+    code: str = "CAM-DVR-01"
+    vendor: str = "HTTP_SNAPSHOT"
+    bay: str = "FRONT"
+    bus_code: str | None = None
+    kind: str = "BUS_CCTV"
+    latitude: float = 28.6328
+    longitude: float = 77.2195
+
+
 class WorkOrderIn(BaseModel):
     event_id: str | None = None
     asset_id: str | None = None
@@ -235,14 +272,15 @@ class InspectIn(BaseModel):
 
 
 class CitizenReportIn(BaseModel):
-    latitude: float
-    longitude: float
-    description: str | None = None
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    description: str | None = Field(default=None, max_length=2000)
     severity: Severity = Severity.MEDIUM
     gps_accuracy: float | None = None
-    contact: str | None = None
-    asset_code: str | None = None
-    qr_payload: str | None = None
+    contact: str | None = Field(default=None, max_length=64)
+    asset_code: str | None = Field(default=None, max_length=64)
+    qr_payload: str | None = Field(default=None, max_length=256)
+    claim_token: str | None = Field(default=None, max_length=4000)
     extra: dict[str, Any] | None = None
 
 

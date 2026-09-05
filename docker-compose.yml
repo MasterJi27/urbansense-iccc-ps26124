@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: urbansense
+      POSTGRES_PASSWORD: urbansense
+      POSTGRES_DB: urbansense
+    ports:
+      - "5432:5432"
+    volumes:
+      - urbansense_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U urbansense -d urbansense"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: urbansense
+      MINIO_ROOT_PASSWORD: urbansense_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - urbansense_minio:/data
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://urbansense:urbansense@postgres:5432/urbansense
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: http://localhost:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  urbansense_pg:
+  urbansense_minio:

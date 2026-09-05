@@ -48,7 +48,7 @@ export default function Users(){
         </div>
         {view.length===0 && <Empty icon="○" title="No users match" description={q||role!=="ALL" ? "Try clearing search or role filter" : "No users registered"} actionLabel={(q||role!=="ALL")?"Clear filters":undefined} onAction={(q||role!=="ALL")?()=>{setQ("");setRole("ALL");}:undefined} />}
       </div>
-      <p className="muted" style={{fontSize:11,marginTop:8}}>Seed: superadmin / admin / inspector / operator @urbansense.local • UrbanSense@2026 • Register is admin-gated.</p>
+      <p className="muted" style={{fontSize:11,marginTop:8}}>Seed accounts: superadmin / admin / inspector / operator @urbansense.local. Register is admin-gated. Shared demo password is only on the login booth, not here.</p>
     </div>
   );
 }

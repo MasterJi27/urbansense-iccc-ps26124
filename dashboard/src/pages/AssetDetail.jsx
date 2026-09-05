@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
+import { CircleMarker } from "react-leaflet";
+import CorridorMap from "../components/CorridorMap.jsx";
 import { api } from "../api";
 import { Skeleton } from "../components/Skeleton.jsx";
 
@@ -136,10 +137,9 @@ export default function AssetDetail(){
         <div style={{display:"grid",gap:12}}>
           <div className="card" style={{padding:0,overflow:"hidden"}}>
             <div style={{padding:"10px 14px",borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between"}}><h4 style={{margin:0}}>Location</h4><span className="muted" style={{fontSize:11}}>{a.qr_payload.slice(-12)}</span></div>
-            <MapContainer center={[a.latitude,a.longitude]} zoom={16} style={{height:280,borderRadius:0}}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <CorridorMap center={[a.latitude,a.longitude]} zoom={16} height={280} hideCaption>
               <CircleMarker center={[a.latitude,a.longitude]} radius={13} pathOptions={{color: health<50?"#e5484d": health<70?"#b7790f":"#0bb98a", fillOpacity:.18, weight:2}} />
-            </MapContainer>
+            </CorridorMap>
             <div style={{padding:10}}><div className="mono table-num" style={{fontSize:12}}>{a.latitude.toFixed(5)}, {a.longitude.toFixed(5)}</div><div className="muted" style={{fontSize:11}}>Snap geofence 70m • crowd baseline per-bridge</div></div>
           </div>
 

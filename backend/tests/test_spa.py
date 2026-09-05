@@ -1,3 +1,4 @@
+from app.spa import is_hidden_api_surface
 from tests.test_auth import auth_header
 
 NAV = {
@@ -26,7 +27,19 @@ def test_unauthenticated_api_event_is_401(client):
     assert r.status_code == 401
 
 
+def test_spa_html_is_not_cached(client):
+    r = client.get("/events/not-a-real-id", headers=NAV)
+    assert r.status_code == 200
+    assert "no-store" in r.headers.get("cache-control", "").lower()
+
+
 def test_health_is_never_spa(client):
     r = client.get("/health", headers=NAV)
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_docs_paths_are_hidden_outside_dev():
+    assert is_hidden_api_surface("docs")
+    assert is_hidden_api_surface("/openapi.json")
+    assert not is_hidden_api_surface("events")

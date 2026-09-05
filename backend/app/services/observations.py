@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,10 @@ from app.realtime.hub import hub
 from app.schemas.common import EventOut, ObservationIn
 from app.services.audit import audit
 from app.services.azure_edge import save_evidence_blob
+from app.services.departments import attach_department
+from app.services.extras import sanitize_extra
 from app.services.fusion import FusionEngine, default_engine
+from app.services.refs import coerce_bus_id
 from app.services.road_health import recompute_road_health
 
 
@@ -31,6 +35,7 @@ def ingest_observation(
     ts = payload.timestamp or datetime.now(timezone.utc)
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
+    bus_fk = coerce_bus_id(db, payload.bus_id)
     obs = Observation(
         event_type=payload.event_type,
         severity=payload.severity,
@@ -41,7 +46,7 @@ def ingest_observation(
         source_type=payload.source_type,
         source_id=payload.source_id,
         sensor_id=payload.sensor_id,
-        bus_id=payload.bus_id,
+        bus_id=bus_fk,
         route_id=payload.route_id,
         confidence=payload.confidence,
         simulated=payload.simulated,
@@ -51,7 +56,7 @@ def ingest_observation(
         plate_confidence=payload.plate_confidence,
         evidence_url=payload.evidence_url,
         thumbnail_url=payload.thumbnail_url,
-        extra=payload.extra,
+        extra=sanitize_extra(payload.extra),
     )
     db.add(obs)
     db.flush()
@@ -73,6 +78,7 @@ def ingest_observation(
         detail=fusion.reason,
     )
     recompute_road_health(db)
+    attach_department(fusion.event)
     db.commit()
     db.refresh(fusion.event)
     return obs, fusion.event, fusion.created
@@ -87,7 +93,8 @@ def save_evidence_bytes(filename: str, data: bytes) -> str:
     settings = get_settings()
     directory = Path(settings.evidence_dir).resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    safe = _sanitize_evidence_filename(filename)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    safe = f"{stamp}-{uuid4().hex[:8]}-{_sanitize_evidence_filename(filename)}"
     path = (directory / safe).resolve()
     # ensure resolved path is within evidence directory (prevent traversal)
     try:

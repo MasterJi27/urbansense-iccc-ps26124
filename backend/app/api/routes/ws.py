@@ -9,9 +9,12 @@ router = APIRouter()
 @router.websocket("/ws/events")
 async def events_ws(ws: WebSocket, token: str = Query(default="")):
     try:
-        decode_token(token)
+        payload = decode_token(token)
     except ValueError:
         await ws.close(code=4401)
+        return
+    if payload.get("scope") == "field":
+        await ws.close(code=4403)
         return
     await hub.connect(ws)
     try:

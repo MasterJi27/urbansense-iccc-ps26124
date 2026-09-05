@@ -1,7 +1,10 @@
 import { Navigate, NavLink, Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { getToken, clearSession, api } from "./api";
+import { getToken, getScope, clearSession, api } from "./api";
 import Login from "./pages/Login.jsx";
+import FieldCamera from "./pages/FieldCamera.jsx";
+import CctvBridge from "./pages/CctvBridge.jsx";
+import CitizenReport from "./pages/CitizenReport.jsx";
 import Events from "./pages/Events.jsx";
 import EventDetail from "./pages/EventDetail.jsx";
 import Fleet from "./pages/Fleet.jsx";
@@ -15,7 +18,7 @@ import RoadHealth from "./pages/RoadHealth.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { UiProvider, useUi } from "./i18n.jsx";
 import FolioSheet from "./components/FolioSheet.jsx";
-import { MORE_TABS, NAV_TABS } from "./folioCopy.js";
+import { ATLAS_TABS, CAPTURE_TABS, MORE_TABS, NAV_TABS } from "./folioCopy.js";
 
 const Overview = lazy(() => import("./pages/Overview.jsx"));
 const LiveMap = lazy(() => import("./pages/LiveMap.jsx"));
@@ -23,7 +26,14 @@ const Analytics = lazy(() => import("./pages/Analytics.jsx"));
 const BridgeHealth = lazy(() => import("./pages/BridgeHealth.jsx"));
 
 function Guard({ children }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  const loc = useLocation();
+  if (!getToken()) {
+    const next = encodeURIComponent(`${loc.pathname}${loc.search}`);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  if (getScope() === "field") {
+    return <Navigate to="/field" replace />;
+  }
   return children;
 }
 
@@ -73,6 +83,8 @@ function Shell() {
     if (p.startsWith("/sensors")) return t("sensors");
     if (p.startsWith("/users")) return t("users");
     if (p.startsWith("/settings")) return t("settings");
+    if (p.startsWith("/field")) return t("fieldUnit");
+    if (p.startsWith("/cctv")) return t("cctvUnit");
     return "UrbanSense";
   }, [loc.pathname, t]);
 
@@ -268,6 +280,11 @@ function Shell() {
   const name = localStorage.getItem("urbansense_name") || "Operator";
 
   const moreTabs = MORE_TABS.filter((tab) => tab.to !== "/users" || role === "ADMIN" || role === "SUPER_ADMIN");
+  const deskGroups = [
+    { label: t("captureDesk"), tabs: CAPTURE_TABS },
+    { label: t("atlasDesk"), tabs: ATLAS_TABS },
+    { label: t("moreDesk"), tabs: moreTabs },
+  ];
 
   return (
     <div className="register-shell">
@@ -286,11 +303,16 @@ function Shell() {
         </nav>
         <p className="folio-locator">{name.toUpperCase()} · {role}</p>
       </header>
-      <nav className="register-more" aria-label="More">
-        {moreTabs.map((tab) => (
-          <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `register-more-link${isActive ? " is-active" : ""}`}>
-            <span>{tab.hi}</span>{tab.en}
-          </NavLink>
+      <nav className="register-more" aria-label="Desks">
+        {deskGroups.map((group) => (
+          <span key={group.label} className="register-more-group">
+            <span className="register-more-kicker">{group.label}</span>
+            {group.tabs.map((tab) => (
+              <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `register-more-link${isActive ? " is-active" : ""}`}>
+                <span>{tab.hi}</span>{tab.en}
+              </NavLink>
+            ))}
+          </span>
         ))}
         <span className="register-more-user">
           {name.toUpperCase()} · {role} · {liveCount ?? "—"} OPEN ·{" "}
@@ -429,6 +451,9 @@ export default function App() {
         <Routes>
           <Route path="/folio" element={<FolioSheet pathname="/folio" />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/field" element={<FieldCamera />} />
+          <Route path="/cctv" element={<CctvBridge />} />
+          <Route path="/report" element={<CitizenReport />} />
           <Route path="/*" element={<Guard><Shell /></Guard>} />
         </Routes>
       </ToastProvider>

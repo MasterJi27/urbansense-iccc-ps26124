@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import { CircleMarker, Popup } from "react-leaflet";
+import CorridorMap from "../components/CorridorMap.jsx";
 import { Link } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { api } from "../api";
@@ -170,8 +171,7 @@ export default function BridgeHealth(){
       <div className="bridge-main-grid">
         <div className="maprail">
           <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid var(--line)"}}><b style={{fontSize:11,letterSpacing:".08em",textTransform:"uppercase",color:"var(--muted)"}}>Delhi bridges + SHM events</b><span className="muted" style={{fontSize:11}}>{bridges.length} bridges • {events.length} SHM events</span></div>
-          <MapContainer center={[28.60,77.20]} zoom={11} style={{height:460}}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <CorridorMap center={[28.60,77.20]} zoom={11} height={460} hideCaption>
             {bridges.map(b=>(
               <CircleMarker key={b.id} center={[b.latitude,b.longitude]} radius={15} pathOptions={{color: b.health_score<50?"#e5484d": b.health_score<70?"#b7790f":"#0bb98a", fillOpacity:.14, weight:2, dashArray: sel?.id===b.id?"6 4":null}}>
                 <Popup><b>{b.name}</b><div>{b.code} • {b.health_score.toFixed(0)}/100 • f {b.baseline_freq?.toFixed(1)}→{b.last_freq?.toFixed(1)}Hz</div><div className="muted" style={{fontSize:11}}>{b.predicted_days?`${b.predicted_days}d to maintenance`:"stable"}</div><Link to={`/assets/${b.id}`}>Passport →</Link></Popup>
@@ -182,7 +182,7 @@ export default function BridgeHealth(){
                 <Popup><Link to={`/events/${e.id}`}>{e.public_code}</Link> • {e.event_type} • <span className={`badge ${e.severity}`} style={{fontSize:10}}>{e.severity}</span><div className="mono muted" style={{fontSize:10}}>{e.extra?.shm_reason?.slice(0,130)}</div>{e.extra?.predicted_days? <div style={{fontSize:11,color:"var(--danger)"}}>predicted {e.extra.predicted_days}d</div>:null}</Popup>
               </CircleMarker>
             ))}
-          </MapContainer>
+          </CorridorMap>
           <div style={{padding:10,display:"flex",gap:6,flexWrap:"wrap"}}><span className="tag real" style={{fontSize:10}}>FFT f_dom tracked</span><span className="tag rule" style={{fontSize:10}}>temp-comp</span><span className="tag sim" style={{fontSize:10}}>auto WO on CRITICAL</span><span className="muted" style={{fontSize:11,marginLeft:"auto"}}>70m geofence</span></div>
         </div>
 

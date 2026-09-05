@@ -49,6 +49,7 @@ export default function ConfirmationStrip({ event, ledger, compact = false }) {
   const secondBus = confirm?.source_id || buses[1] || null;
   const clearPasses = ledger?.clear_passes || event?.extra?.clear_passes || [];
   const repairPasses = ledger?.repair_passes || event?.extra?.repair_passes || [];
+  const other = event?.event_type === "OTHER";
   const later = repairOk ? repairPasses : clearPasses;
   const laterIds = later.map((row) => row.source_id || row).filter(Boolean);
   const showAbsence = expired || repairOk || laterIds.length > 0;
@@ -60,8 +61,9 @@ export default function ConfirmationStrip({ event, ledger, compact = false }) {
   return (
     <div className={stripClass} role="status">
       <div className="usp-strip-kicker">{t("uspKicker")}</div>
-      <p className="usp-strip-line">{t("uspLine")}</p>
-      {showAbsence ? <p className="muted usp-absence">{t("uspAbsence")}</p> : null}
+      <p className="usp-strip-line">{other ? t("uspOther") : t("uspLine")}</p>
+      {showAbsence && !other ? <p className="muted usp-absence">{t("uspAbsence")}</p> : null}
+      {!other && (
       <div className="usp-strip-grid">
         <div className="usp-cell">
           <span className="usp-cell-label">{t("firstSighting")}</span>
@@ -89,10 +91,11 @@ export default function ConfirmationStrip({ event, ledger, compact = false }) {
           </div>
         )}
       </div>
+      )}
       {event?.public_code && event?.id && (
         <div className="usp-strip-foot">
           <Link className="evlink" to={`/events/${event.id}`}>{event.public_code}</Link>
-          <span className="muted"> · {event.event_type} · {patrolFoot(state)}</span>
+          <span className="muted"> · {event.event_type} · {other ? t("patrolOther") : patrolFoot(state)}</span>
         </div>
       )}
     </div>

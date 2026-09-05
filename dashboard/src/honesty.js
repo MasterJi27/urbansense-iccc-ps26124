@@ -102,7 +102,15 @@ export function uniqueSources(ev) {
   return [];
 }
 
+export function isBoothSource(ev) {
+  const id = String(ev?.source_id || ev?.extra?.source_id || "");
+  return /^(FIELD-|CAM-|CCTV-)/i.test(id);
+}
+
 export function patrolLabel(ev) {
+  if (ev?.event_type === "OTHER") {
+    return "Unclassified still — fleet confirm does not apply";
+  }
   const extra = ev?.extra || {};
   const state = extra.patrol_state || (repeatConfirm(ev).sources >= 2 ? "FLEET_CONFIRMED" : "FIRST_SIGHTING");
   if (state === "FLEET_CONFIRMED") return "2nd bus confirmed";

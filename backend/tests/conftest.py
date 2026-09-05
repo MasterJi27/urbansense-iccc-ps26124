@@ -21,6 +21,8 @@ from app.main import app
 from app.models.fleet import Bus, SensorNode
 from app.models.user import User, UserRole
 from app.security import hash_password
+from app.services.field_booth import reset_booth
+from app.services.rate_limit import reset_limits
 
 engine = create_engine(
     "sqlite+pysqlite://",
@@ -36,6 +38,8 @@ def _reset_db():
     """Each test gets an empty schema so DEMO_LAT fusion cannot pick up leftover events."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    reset_booth()
+    reset_limits()
     yield
 
 
@@ -91,5 +95,12 @@ def admin_token(client):
         db.commit()
     db.close()
     r = client.post("/auth/login", json={"email": "admin@test.local", "password": "password12"})
+    assert r.status_code == 200, r.text
+    return r.json()["access_token"]
+
+
+@pytest.fixture
+def operator_token(client, admin_token):
+    r = client.post("/auth/login", json={"email": "op@test.local", "password": "password12"})
     assert r.status_code == 200, r.text
     return r.json()["access_token"]

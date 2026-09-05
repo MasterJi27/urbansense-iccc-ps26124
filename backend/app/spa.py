@@ -16,6 +16,7 @@ _SKIP_PREFIXES = (
     "/health",
     "/ui/",
     "/evidence/",
+    "/maps/",
     "/ws/",
 )
 
@@ -35,5 +36,17 @@ def should_serve_spa(request: Request) -> bool:
     return (DASHBOARD_DIR / "index.html").is_file()
 
 
+SPA_HEADERS = {
+    "Cache-Control": "no-store",
+    "Vary": "Accept, Sec-Fetch-Dest, Sec-Fetch-Mode",
+}
+
+HIDDEN_WHEN_NOT_DEV = frozenset({"docs", "redoc", "openapi.json"})
+
+
+def is_hidden_api_surface(path: str) -> bool:
+    return path.strip("/").lower() in HIDDEN_WHEN_NOT_DEV
+
+
 def spa_index() -> FileResponse:
-    return FileResponse(DASHBOARD_DIR / "index.html")
+    return FileResponse(DASHBOARD_DIR / "index.html", headers=SPA_HEADERS)

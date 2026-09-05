@@ -25,10 +25,26 @@ def verify_password(plain: str, hashed: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def create_access_token(subject: str, role: str) -> str:
+def create_access_token(
+    subject: str,
+    role: str,
+    *,
+    scope: str = "iccc",
+    minutes: int | None = None,
+) -> str:
     settings = get_settings()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "role": role, "exp": expire}
+    ttl = minutes if minutes is not None else settings.access_token_expire_minutes
+    if scope == "field":
+        ttl = minutes if minutes is not None else settings.field_token_expire_minutes
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ttl)
+    payload = {
+        "sub": subject,
+        "role": role,
+        "scope": scope,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "jti": os.urandom(8).hex(),
+    }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 

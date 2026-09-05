@@ -38,3 +38,23 @@ def enable_postgis(db_engine) -> None:
         with db_engine.connect() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
             conn.commit()
+
+
+def ensure_pg_enum_values(db_engine) -> None:
+    """Add new EventType / EventStatus labels to an existing Azure Postgres enum."""
+    if db_engine.url.get_backend_name() != "postgresql":
+        return
+    from app.models.event import EventStatus, EventType, SourceType
+
+    groups = (
+        ("eventtype", [m.value for m in EventType]),
+        ("eventstatus", [m.value for m in EventStatus]),
+        ("sourcetype", [m.value for m in SourceType]),
+    )
+    with db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        for type_name, values in groups:
+            exists = conn.execute(text("SELECT 1 FROM pg_type WHERE typname = :n"), {"n": type_name}).scalar()
+            if not exists:
+                continue
+            for val in values:
+                conn.execute(text(f"ALTER TYPE {type_name} ADD VALUE IF NOT EXISTS '{val}'"))

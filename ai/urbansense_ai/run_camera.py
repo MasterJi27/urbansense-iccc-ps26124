@@ -40,13 +40,15 @@ def main() -> None:
     p.add_argument("--source", default="0", help="webcam index, video path, or rtsp://")
     p.add_argument("--api", default=os.environ.get("URBANSENSE_API", "http://127.0.0.1:8000"))
     p.add_argument("--email", default="operator@urbansense.local")
-    p.add_argument("--password", default="UrbanSense@2026")
+    p.add_argument("--password", default=os.environ.get("URBANSENSE_PASSWORD", ""))
     p.add_argument("--lat", type=float, default=28.6328)
     p.add_argument("--lon", type=float, default=77.2195)
     p.add_argument("--source-id", default="WEBCAM-01")
     p.add_argument("--display", action="store_true")
     p.add_argument("--max-frames", type=int, default=0)
     args = p.parse_args()
+    if not args.password:
+        p.error("pass --password or set URBANSENSE_PASSWORD")
 
     import cv2
     from urbansense_ai.pipeline import FrameContext, PerceptionPipeline

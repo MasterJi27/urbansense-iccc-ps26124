@@ -23,9 +23,16 @@ export function setSession(data) {
   localStorage.setItem(KEY, data.access_token);
   localStorage.setItem("urbansense_role", data.role);
   localStorage.setItem("urbansense_name", data.full_name);
+  localStorage.setItem("urbansense_scope", data.scope || "iccc");
+}
+export function getScope() {
+  return localStorage.getItem("urbansense_scope") || "iccc";
 }
 export function clearSession() {
   localStorage.removeItem(KEY);
+  localStorage.removeItem("urbansense_role");
+  localStorage.removeItem("urbansense_name");
+  localStorage.removeItem("urbansense_scope");
 }
 
 export async function api(path, opts = {}) {
@@ -35,13 +42,18 @@ export async function api(path, opts = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {
-    res = await fetch(`${API}${path}`, { ...opts, headers });
+    res = await fetch(`${API}${path}`, { cache: "no-store", ...opts, headers });
   } catch {
     throw new Error("Cannot reach API. Local: keep FastAPI on :8000 and use Vite. Azure: refresh — the API is the same host as this page.");
   }
   if (res.status === 401) {
     clearSession();
-    if (!path.includes("/auth/login")) window.location.href = "/login";
+    const onField = window.location.pathname.startsWith("/field") || window.location.pathname.startsWith("/cctv") || window.location.pathname.startsWith("/report");
+    const joining = path.includes("/auth/login") || path.includes("/auth/field-join") || path.includes("/citizen/");
+    if (!joining && !onField) {
+      const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+      window.location.href = `/login?next=${next}`;
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

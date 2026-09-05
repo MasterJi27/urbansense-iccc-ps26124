@@ -47,10 +47,34 @@ export default function Settings(){
     <div>
       <div className="page-header"><div><div className="crumbs">SYSTEM • {t("settings").toUpperCase()}</div><h2 className="page-title">{t("pageSet")}</h2><p className="page-sub muted">{t("pageSetSub")} • <span role="status"><span className="table-num">{ai ? Object.keys(ai).length : 0}</span> engines</span></p></div><div className="filters"><span className="tag info"><span className="table-num">{ai ? Object.keys(ai).length : 0}</span> engines</span></div></div>
 
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h4>Two clients — plus the iPhone booth</h4>
+        <div className="stat-row"><span className="muted">ICCC laptop</span><b>This register. Control-room Chrome/Edge.</b></div>
+        <div className="stat-row"><span className="muted">Android windshield</span><b>Flutter <span className="mono">mobile/</span> — IMU+GPS, never a video stream.</b></div>
+        <div className="stat-row"><span className="muted">iPhone / any phone</span><b>Safari <span className="mono">/field</span> — PIN ping, then one still to the same ingest.</b></div>
+        <div className="stat-row"><span className="muted">Any CCTV / DVR</span><b>Safari <span className="mono">/cctv</span> — lens, file export, or HTTP snapshot. No our hardware. Not a live NVR.</b></div>
+        <div className="stat-row"><span className="muted">Map</span><b>{s.azure_maps_enabled ? "Azure Maps road tiles via server proxy. Leaflet only draws the pins." : "Leaflet + OSM fallback — Azure Maps key not set on this host."}</b></div>
+        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Tiny UI change? Run <span className="mono">scripts/ship-ui.ps1</span>. Full <span className="mono">azd up</span> is only for infra. Last UI deploy is minutes, not an hour.</p>
+      </div>
+
       <div className="usp-strip is-confirmed" role="status" style={{ marginBottom: 12 }}>
         <div className="usp-strip-kicker">{t("uspKicker")}</div>
         <p className="usp-strip-line">{t("uspLine")}</p>
         <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>One bus opens an UNVERIFIED first sighting. A different bus on the same 40 m / 6 h cluster is the only automatic confirm. Three later buses that do not re-sense expire a rumour. Two later buses after repair are the auditor. Indian signs stay DISABLED. Waterlogging stays SIMULATED.</p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h4>RDD eval <HonestyChip status={s.rdd_eval?.honesty || "EXPERIMENTAL"} compact /></h4>
+        <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{s.rdd_eval?.note || s.rdd_eval?.dataset}</p>
+        <div className="stat-row"><span className="muted">Evaluated on this host</span><b>{s.rdd_eval?.evaluated ? "yes" : "no"}</b></div>
+        <div className="stat-row"><span className="muted">Dataset</span><b>{s.rdd_eval?.dataset || "RDD2022 India"}</b></div>
+        {(s.rdd_eval?.classes || []).map((row) => (
+          <div className="stat-row" key={row.id || row.name}>
+            <span className="muted">{row.id} {row.name}</span>
+            <b>{row.maps_to}{row.map50 != null ? ` · mAP@0.5 ${row.map50}` : ""}</b>
+          </div>
+        ))}
+        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Train with <span className="mono">python scripts/train_rdd.py</span>. We do not print a GitHub rival&apos;s mAP as ours.</p>
       </div>
 
       <div className="card" style={{marginBottom:12}}>

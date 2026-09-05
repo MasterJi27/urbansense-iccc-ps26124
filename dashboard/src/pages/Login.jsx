@@ -1,10 +1,16 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, setSession } from "../api";
 import { useUi } from "../i18n.jsx";
 
+function safeNext(raw) {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("://")) return "/";
+  return raw;
+}
+
 export default function Login() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const { t, lang, toggleLang } = useUi();
   const [email, setEmail] = useState("admin@urbansense.local");
   const [password, setPassword] = useState("UrbanSense@2026");
@@ -17,7 +23,7 @@ export default function Login() {
     try {
       const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
       setSession(data);
-      nav("/");
+      nav(safeNext(params.get("next")));
     } catch (ex) {
       setErr(ex.message);
     } finally {
@@ -64,6 +70,9 @@ export default function Login() {
           </button>
           <p className="muted" style={{ fontSize: 12, marginTop: 16, letterSpacing: "0.04em" }}>
             admin / inspector / operator / superadmin @urbansense.local
+          </p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            <Link to="/report">Citizen bridge report</Link> — own tickets only, no ICCC password.
           </p>
         </form>
       </div>

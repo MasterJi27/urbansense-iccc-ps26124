@@ -1,37 +1,43 @@
-"""Citizen QR report — no auth, creates BRIDGE_ANOMALY observation."""
+"""Citizen QR report — no ICCC login. Own-ticket via HMAC claim, not a shared inbox."""
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.event import EventType, Severity, SourceType
+from app.models.event import EventType, Severity, SourceType, UrbanEvent
 from app.models.ops import NotificationLog
 from app.schemas.common import CitizenReportIn, ObservationIn
+from app.services.citizen_claims import merge_citizen_claim, read_citizen_claim
+from app.services.extras import sanitize_extra
+from app.services.departments import department_for
+from app.services.dpdp import mask_contact, sanitize_event
+from app.services.observations import ingest_observation
+from app.services.rate_limit import client_ip, enforce
 
 router = APIRouter(tags=["citizen"])
 
 
 @router.post("/citizen/report")
-def citizen_report(body: CitizenReportIn, db: Session = Depends(get_db)):
-    # Force BRIDGE_ANOMALY regardless of input
-    from app.services.observations import ingest_observation
+def citizen_report(body: CitizenReportIn, request: Request, db: Session = Depends(get_db)):
+    enforce(f"citizen:{client_ip(request)}", limit=12, window_s=600)
 
     severity = body.severity or Severity.MEDIUM
-    # keep severity within expected values
     try:
         sev_enum = Severity(severity) if isinstance(severity, str) else severity
     except Exception:
         sev_enum = Severity.MEDIUM
 
-    source_id = f"citizen:{body.contact or 'anonymous'}"
+    source_id = "citizen:anonymous"
     if body.qr_payload:
         source_id = f"citizen-qr:{body.qr_payload[:32]}"
     elif body.asset_code:
-        source_id = f"citizen:{body.asset_code}:{body.contact or 'anonymous'}"
+        source_id = f"citizen:{body.asset_code}"
+    elif body.contact:
+        source_id = "citizen:contact"
 
-    extra = dict(body.extra or {})
+    extra = dict(sanitize_extra(body.extra) or {})
     if body.description:
         extra["citizen_description"] = body.description
     if body.asset_code:
@@ -42,6 +48,7 @@ def citizen_report(body: CitizenReportIn, db: Session = Depends(get_db)):
         extra["citizen_contact"] = body.contact
     extra["citizen_report"] = True
     extra["ai_status"] = "RULE_BASED"
+    extra.update(department_for(EventType.BRIDGE_ANOMALY))
 
     obs_in = ObservationIn(
         event_type=EventType.BRIDGE_ANOMALY,
@@ -57,8 +64,8 @@ def citizen_report(body: CitizenReportIn, db: Session = Depends(get_db)):
         extra=extra,
     )
     obs, event, created = ingest_observation(db, obs_in)
+    claim = merge_citizen_claim(body.claim_token, event.id)
 
-    # Simple in-app notification log for citizen report
     notif = NotificationLog(
         title="Citizen bridge report — BRIDGE_ANOMALY",
         message=body.description or f"Citizen report at {body.latitude:.5f},{body.longitude:.5f} severity {sev_enum.value}",
@@ -77,4 +84,35 @@ def citizen_report(body: CitizenReportIn, db: Session = Depends(get_db)):
         "created_event": created,
         "notification_id": notif.id,
         "severity": sev_enum.value,
+        "claim_token": claim,
+        "department": department_for(EventType.BRIDGE_ANOMALY),
+        "contact_masked": mask_contact(body.contact) if body.contact else None,
+        "honesty": "RULE_BASED",
+        "note": "Keep this claim token to see only your tickets. ICCC still sees the folio.",
     }
+
+
+@router.get("/citizen/tickets")
+def citizen_tickets(db: Session = Depends(get_db), claim: str = Query(min_length=8, max_length=4000)):
+    try:
+        ids = read_citizen_claim(claim)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    rows = []
+    for eid in ids:
+        event = db.get(UrbanEvent, eid)
+        if event is None:
+            continue
+        body = {
+            "id": event.id,
+            "public_code": event.public_code,
+            "event_type": event.event_type.value if event.event_type else None,
+            "severity": event.severity.value if event.severity else None,
+            "status": event.status.value if event.status else None,
+            "latitude": event.latitude,
+            "longitude": event.longitude,
+            "created_at": event.created_at,
+            "extra": event.extra,
+        }
+        rows.append(sanitize_event(body, None))
+    return {"honesty": "RULE_BASED", "count": len(rows), "items": rows}

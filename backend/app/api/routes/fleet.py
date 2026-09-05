@@ -99,7 +99,7 @@ def list_sensors(db: Session = Depends(get_db), _: User = Depends(get_current_us
 
 
 @router.post("/sensor-nodes")
-def create_sensor(body: SensorBindIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def create_sensor(body: SensorBindIn, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
     node = db.query(SensorNode).filter(SensorNode.code == body.sensor_code).first()
     if not node:
         node = SensorNode(code=body.sensor_code, device_label=body.device_label)
@@ -116,7 +116,7 @@ def create_sensor(body: SensorBindIn, db: Session = Depends(get_db), _: User = D
 
 
 @router.post("/sensor-nodes/bind")
-def bind_sensor(body: SensorBindIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def bind_sensor(body: SensorBindIn, db: Session = Depends(get_db), user: User = Depends(require_roles(UserRole.ADMIN))):
     return create_sensor(body, db, user)
 
 

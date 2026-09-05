@@ -61,9 +61,12 @@ def azure_safety_status() -> dict:
     }
 
 
+def still_limit() -> int:
+    return get_settings().still_max_bytes or MAX_STILL_BYTES
+
+
 def validate_still(data: bytes) -> None:
-    settings = get_settings()
-    limit = settings.still_max_bytes or MAX_STILL_BYTES
+    limit = still_limit()
     if not data:
         raise StillRejected("empty still")
     if len(data) > limit:
@@ -73,6 +76,12 @@ def validate_still(data: bytes) -> None:
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return
     raise StillRejected("still must be JPEG or PNG")
+
+
+async def read_still(file) -> bytes:
+    data = await file.read(still_limit() + 1)
+    validate_still(data)
+    return data
 
 
 def screen_still(data: bytes) -> dict:

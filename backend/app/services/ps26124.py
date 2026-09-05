@@ -36,7 +36,7 @@ COVERAGE = [
     {"id": "od", "requirement": "OD patterns + route delays", "status": "SIMULATED", "how": "Seeded trips; empty when no real AVL"},
     {"id": "actions", "requirement": "Actionable insights / work orders", "status": "REAL", "how": "Verify → WO → repair → re-verify"},
     {"id": "edge", "requirement": "Edge-AI + low bandwidth", "status": "REAL", "how": "Onboard stills, ~1KB JSON, no video upload"},
-    {"id": "multicam", "requirement": "Front / rear / side / cabin cameras", "status": "REAL", "how": "Five bays. Cabin never scores road defects. Frames, not raw video to cloud"},
+    {"id": "multicam", "requirement": "Front / rear / side / cabin cameras", "status": "REAL", "how": "Five bays + any-camera still bridge (/cctv). Cabin never scores road defects. Frames, not raw video"},
 ]
 
 

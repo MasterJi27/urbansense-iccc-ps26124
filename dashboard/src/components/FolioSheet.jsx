@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, CircleMarker } from "react-leaflet";
+import { CircleMarker } from "react-leaflet";
+import CorridorMap from "./CorridorMap.jsx";
 import { NavLink } from "react-router-dom";
 import { COMP_FOLIO, COMP_ROWS, NAV_TABS, PASS_PLATES } from "../folioCopy.js";
 
@@ -121,10 +122,9 @@ export default function FolioSheet({
 
       <section className="r-map-frame folio-map" aria-label={data.mapCaption}>
         <div className="folio-map-caption">{data.mapCaption}</div>
-        <MapContainer center={center} zoom={14} className="folio-leaflet" scrollWheelZoom={false} zoomControl={false}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OSM" />
+        <CorridorMap center={center} zoom={14} className="folio-leaflet" scrollWheelZoom={false} zoomControl={false} hideCaption>
           <CircleMarker center={center} radius={10} pathOptions={{ color: "#b0342b", fillColor: "#b0342b", fillOpacity: 0.85 }} />
-        </MapContainer>
+        </CorridorMap>
       </section>
 
       <p className="r-passes-caption folio-passes-caption">{data.passes}</p>

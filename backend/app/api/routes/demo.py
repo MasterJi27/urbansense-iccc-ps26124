@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import require_roles
 from app.models.asset import Asset, AssetCondition, AssetType
@@ -107,9 +108,11 @@ async def start_demo(
     body: DemoStep,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.OPERATOR)),
+    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     """Generate clearly simulated observations for the live demo story."""
+    if not get_settings().demo_api_enabled:
+        raise HTTPException(status_code=403, detail="Demo API is disabled on this host.")
     b42, b17, s0, s1 = _ensure_demo_fleet(db)
     now = datetime.now(timezone.utc)
 
@@ -184,9 +187,11 @@ def _ensure_sign_183(db: Session) -> Asset:
 async def jury_run(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.OPERATOR)),
+    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     """One-click BEL PS 26124 walkthrough. Seed payloads; engines stay honest."""
+    if not get_settings().demo_api_enabled:
+        raise HTTPException(status_code=403, detail="Demo API is disabled on this host.")
     b42, b17, s0, s1 = _ensure_demo_fleet(db)
     steps: list[dict] = []
 

@@ -1,6 +1,7 @@
 """Unified ingestion gateway. Future CCTV/IoT devices post the same Observation model."""
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,10 +9,12 @@ from app.deps import get_current_user
 from app.models.event import EventType, Severity, SourceType
 from app.models.user import User
 from app.schemas.common import ObservationIn, ObservationOut, EventOut
+from app.services.dpdp import sanitize_event, sanitize_observation
 from app.services.azure_edge import (
     StillRejected,
     analyze_still,
     azure_stack_status,
+    read_still,
     screen_still,
     validate_still,
 )
@@ -23,11 +26,16 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 async def _ingest(body: ObservationIn, source: SourceType, db: Session, user: User, background: BackgroundTasks):
     body.source_type = source
-    obs, event, created = ingest_observation(db, body, actor_id=user.id)
+    try:
+        obs, event, created = ingest_observation(db, body, actor_id=user.id)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=400, detail="Could not store observation. Bus/source link was invalid.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     background.add_task(publish_event, event, created)
     return {
-        "observation": ObservationOut.model_validate(obs).model_dump(mode="json"),
-        "event": EventOut.model_validate(event).model_dump(mode="json"),
+        "observation": sanitize_observation(ObservationOut.model_validate(obs).model_dump(mode="json"), user),
+        "event": sanitize_event(EventOut.model_validate(event).model_dump(mode="json"), user),
         "created_event": created,
     }
 
@@ -54,7 +62,10 @@ def edge_status(_: User = Depends(get_current_user)):
 
 def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accuracy, source_id, bus_id, heading, speed_kmh, imu_mag, camera_bay: str = "FRONT", source_type: SourceType = SourceType.PHONE):
     validate_still(data)
-    safety = screen_still(data)
+    try:
+        safety = screen_still(data)
+    except Exception as exc:
+        safety = {"ok": True, "ai_status": "DISABLED", "skipped": True, "reason": str(exc)}
     if not safety.get("ok"):
         raise HTTPException(status_code=400, detail={"reason": "content_safety_blocked", "categories": safety.get("blocked")})
     url = save_evidence_bytes(name, data)
@@ -122,9 +133,8 @@ async def probe_phone_still(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    data = await file.read()
     try:
-        validate_still(data)
+        data = await read_still(file)
         safety = screen_still(data)
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -161,7 +171,10 @@ async def ingest_phone_still(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    data = await file.read()
+    try:
+        data = await read_still(file)
+    except StillRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "phone-still.jpg"
     try:
         body, _vision, _safety, _url = _vision_observation(
@@ -183,6 +196,61 @@ async def ingest_phone_still(
     return await _ingest(body, SourceType.PHONE, db, user, background)
 
 
+@router.post("/cctv/still")
+async def ingest_cctv_still(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    latitude: float = Form(28.6328),
+    longitude: float = Form(77.2195),
+    gps_accuracy: float | None = Form(None),
+    source_id: str = Form("CAM-DVR-01"),
+    bus_id: str | None = Form(None),
+    heading: float | None = Form(None),
+    speed_kmh: float | None = Form(None),
+    camera_bay: str = Form("FRONT"),
+    vendor: str = Form("GENERIC"),
+    source_kind: str = Form("BUS_CCTV"),
+    imu_mag: float | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    kind = SourceType.ROAD_CCTV if (source_kind or "").upper() == "ROAD_CCTV" else SourceType.BUS_CCTV
+    try:
+        data = await read_still(file)
+    except StillRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    name = file.filename or "cctv-still.jpg"
+    try:
+        body, _vision, _safety, _url = _vision_observation(
+            data,
+            name,
+            latitude=latitude,
+            longitude=longitude,
+            gps_accuracy=gps_accuracy,
+            source_id=source_id,
+            bus_id=bus_id,
+            heading=heading,
+            speed_kmh=speed_kmh,
+            imu_mag=imu_mag,
+            camera_bay=camera_bay,
+            source_type=kind,
+        )
+    except StillRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    extra = dict(body.extra or {})
+    extra.update(
+        {
+            "method": "cctv-still",
+            "vendor": (vendor or "GENERIC").upper(),
+            "connector": "any-camera-bridge",
+            "derivation": extra.get("derivation")
+            or "One JPEG from an arbitrary camera/DVR. Not a live NVR stream and not continuous YOLO.",
+        }
+    )
+    body.extra = extra
+    return await _ingest(body, kind, db, user, background)
+
+
 @router.post("/bus/stream-frame")
 async def ingest_bus_stream_frame(
     background: BackgroundTasks,
@@ -198,7 +266,10 @@ async def ingest_bus_stream_frame(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    data = await file.read()
+    try:
+        data = await read_still(file)
+    except StillRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "bus-frame.jpg"
     try:
         body, _vision, _safety, _url = _vision_observation(

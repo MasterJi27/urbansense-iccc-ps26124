@@ -29,11 +29,18 @@ def get_current_user(
     user = db.get(User, payload.get("sub"))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    user.auth_scope = payload.get("scope") or "iccc"
+    return user
+
+
+def require_iccc(user: User = Depends(get_current_user)) -> User:
+    if getattr(user, "auth_scope", "iccc") == "field":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Field booth token cannot open ICCC desks")
     return user
 
 
 def require_roles(*roles: UserRole):
-    def checker(user: User = Depends(get_current_user)) -> User:
+    def checker(user: User = Depends(require_iccc)) -> User:
         if not roles:
             return user
         required_rank = min(ROLE_RANK.get(r, 0) for r in roles)

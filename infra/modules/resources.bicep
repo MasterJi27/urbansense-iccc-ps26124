@@ -123,6 +123,23 @@ resource secretDb 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: { value: databaseUrl }
 }
 
+// Azure Maps raster tiles: Gen2 G2 is Global. Student policy blocks eastus/westeurope Maps SKUs.
+// Name matches the existing student account map-urbansense-yngmbk when suffix is yngmbk.
+resource maps 'Microsoft.Maps/accounts@2023-06-01' = {
+  name: take('map-${name}-${resourceSuffix}', 98)
+  location: 'global'
+  sku: { name: 'G2' }
+  kind: 'Gen2'
+  tags: tags
+  properties: {}
+}
+
+resource secretMaps 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'azure-maps-key'
+  properties: { value: maps.listKeys().primaryKey }
+}
+
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
   location: location
@@ -163,6 +180,8 @@ resource web 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'SECRET_KEY', value: '@Microsoft.KeyVault(SecretUri=${secretKey.properties.secretUri})' }
         { name: 'DATABASE_URL', value: '@Microsoft.KeyVault(SecretUri=${secretDb.properties.secretUri})' }
+        { name: 'AZURE_MAPS_SUBSCRIPTION_KEY', value: '@Microsoft.KeyVault(SecretUri=${secretMaps.properties.secretUri})' }
+        { name: 'DEMO_API_ENABLED', value: 'true' }
       ]
     }
   }
@@ -280,3 +299,4 @@ output visionEndpoint string = vision.properties.endpoint
 output storageAccountUrl string = 'https://${storage.name}.blob.${environment().suffixes.storage}'
 output openaiEndpoint string = openai.properties.endpoint
 output safetyEndpoint string = safety.properties.endpoint
+output mapsAccountName string = maps.name

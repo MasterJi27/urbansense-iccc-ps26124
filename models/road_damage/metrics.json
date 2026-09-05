@@ -1,0 +1,29 @@
+{
+  "honesty": "EXPERIMENTAL",
+  "evaluated": false,
+  "dataset": "RDD2022 India (CRDDC)",
+  "note": "No --data yaml. Download RDD2022 India, convert VOC\u2192YOLO, then re-run. Do not quote sivakanth/oracl4 mAP as UrbanSense.",
+  "classes": [
+    {
+      "id": "D00",
+      "name": "Longitudinal crack",
+      "maps_to": "ROAD_DAMAGE"
+    },
+    {
+      "id": "D10",
+      "name": "Transverse crack",
+      "maps_to": "ROAD_DAMAGE"
+    },
+    {
+      "id": "D20",
+      "name": "Alligator crack",
+      "maps_to": "ROAD_DAMAGE"
+    },
+    {
+      "id": "D40",
+      "name": "Pothole",
+      "maps_to": "POTHOLE"
+    }
+  ],
+  "updated_at": "2026-09-05T14:54:23.781491+00:00"
+}

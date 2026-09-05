@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
+import { MapContainer, CircleMarker, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
+import { CorridorTiles, useCorridorTiles } from "../components/CorridorMap.jsx";
 import L from "leaflet";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -36,6 +37,7 @@ function clusterEvents(list, zoom) {
 
 export default function LiveMap() {
   const { t, monsoon, setMonsoon, vru, setVru } = useUi();
+  const tiles = useCorridorTiles();
   const [events, setEvents] = useState([]);
   const [sensors, setSensors] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -107,7 +109,7 @@ export default function LiveMap() {
           <p className="page-sub muted">{t("pageMapSub")} <span role="status"><span className="table-num">{filtered.length} {t("of")} {events.length}</span> • <span className="table-num">{clusters.length}</span> pins (<span className="table-num">{clusteredCount}</span> clusters @z<span className="table-num">{zoom}</span>)</span></p>
         </div>
         <div className="filters">
-          <span className="section-title" style={{ margin: 0, alignSelf: "center" }}>Map</span>
+          <span className="section-title" style={{ margin: 0, alignSelf: "center" }}>{tiles.caption}</span>
           <input placeholder="Search code / type" aria-label="Search events" value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:200,padding:"8px 12px",borderRadius:999,border:"1px solid var(--line)"}} />
           <select value={sev} onChange={e=>setSev(e.target.value)} aria-label="Severity filter" style={{borderRadius:999}}><option value="ALL">{t("allSev")}</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>
           <select value={typeF} onChange={e=>setTypeF(e.target.value)} aria-label="Type filter" style={{borderRadius:999}}><option value="ALL">{t("allTypes")}</option>{types.map((tp)=><option key={tp} value={tp}>{tp}</option>)}</select>
@@ -131,7 +133,7 @@ export default function LiveMap() {
       <div className="livemap-grid">
         <div className="maprail">
           <MapContainer center={[28.62, 77.22]} zoom={12} style={{ height: 640 }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OSM" />
+            <CorridorTiles />
             <ZoomTracker onZoom={setZoom} />
             {heatOn && filtered.filter((e) => e.severity === "CRITICAL" || e.severity === "HIGH").map((e) => (
               <CircleMarker key={`heat-${e.id}`} center={[e.latitude, e.longitude]} radius={22} pathOptions={{ fillColor: color[e.severity] || color.HIGH, fillOpacity: 0.10, weight: 0 }} />
