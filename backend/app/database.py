@@ -33,6 +33,31 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def ensure_schema_columns(db_engine) -> None:
+    """Add ward/feed columns on an already-provisioned Azure or SQLite database."""
+    dialect = db_engine.url.get_backend_name()
+    adds = [
+        ("buses", "ward_id", "VARCHAR(36)"),
+        ("sensor_nodes", "last_evidence_url", "VARCHAR(512)"),
+        ("sensor_nodes", "last_detect_at", "TIMESTAMP"),
+        ("sensor_nodes", "patrol_mode", "VARCHAR(16)"),
+        ("sensor_nodes", "last_boxes_json", "TEXT"),
+        ("sensor_nodes", "person_count", "INTEGER"),
+        ("sensor_nodes", "overlay_fps", "FLOAT"),
+    ]
+    with db_engine.begin() as conn:
+        for table, column, coltype in adds:
+            try:
+                if dialect == "sqlite":
+                    cols = [r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()]
+                    if column not in cols:
+                        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+                else:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}")
+            except Exception:
+                continue
+
+
 def enable_postgis(db_engine) -> None:
     if db_engine.url.get_backend_name() == "postgresql":
         with db_engine.connect() as conn:

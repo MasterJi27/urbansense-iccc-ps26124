@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import Empty from "../components/Empty.jsx";
 
@@ -24,7 +23,7 @@ export default function Sensors() {
   return (
     <div>
       <div className="page-header"><div><div className="crumbs">SYSTEM • SENSORS</div><h2 className="page-title">Sensor fleet</h2><p className="page-sub muted">Heartbeat 12s • edge modes HIGH/MEDIUM/LOW • <span role="status"><span className="table-num">{filtered.length}</span> of <span className="table-num">{rows.length}</span> sensors • <span className="table-num">{online}/{rows.length}</span> cameras online</span></p></div>
-        <div className="filters"><input placeholder="Search sensor / bus" aria-label="Search sensors" value={q} onChange={e=>setQ(e.target.value)} /><span className={`tag ${online>0?"real":"rule"}`}>{online} online</span><Link className="btn ghost" to="/cctv">CCTV BRIDGE</Link></div>
+        <div className="filters"><input placeholder="Search sensor / bus" aria-label="Search sensors" value={q} onChange={e=>setQ(e.target.value)} /><span className={`tag ${online>0?"real":"rule"}`}>{online} online</span></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
         {filtered.map((s)=>(

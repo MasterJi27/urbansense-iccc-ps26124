@@ -9,6 +9,12 @@ FIELD_EXACT = {
     ("POST", "/ingest/phone"),
     ("POST", "/ingest/phone/still"),
     ("POST", "/ingest/phone/probe"),
+    ("POST", "/ingest/cctv/still"),
+    ("POST", "/ai/analyze-frame"),
+    ("GET", "/ai/capabilities"),
+    ("GET", "/cameras"),
+    ("GET", "/cameras/presets"),
+    ("POST", "/cameras"),
     ("POST", "/sensor-nodes/heartbeat"),
 }
 

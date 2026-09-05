@@ -7,3 +7,10 @@ Place downloaded weights here (gitignored).
 - anpr/plate.pt                     (optional dedicated plate detector)
 
 Train India-only RDD2022 after converting VOC→YOLO. Settings shows EXPERIMENTAL until metrics.json exists from a real val pass.
+
+```text
+# one-time: official Figshare zip → .data/rdd_india/data.yaml (gitignored)
+.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py
+# RTX GPU fine-tune; writes models/road_damage/metrics.json from THIS val split
+.\.venv-train\Scripts\python.exe scripts\train_rdd.py --epochs 20
+```

@@ -16,6 +16,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'edge/edge_console.dart';
 import 'edge/edge_service.dart';
+import 'field_web_lens.dart';
 
 const apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://app-urbansense-yngmbk.azurewebsites.net');
 
@@ -28,15 +29,15 @@ void main() {
     if (details.exception is MissingPluginException) return;
     FlutterError.presentError(details);
   };
-  runApp(const UrbanSenseApp());
+  runApp(const SadakSaarthiApp());
 }
 
-class UrbanSenseApp extends StatelessWidget {
-  const UrbanSenseApp({super.key});
+class SadakSaarthiApp extends StatelessWidget {
+  const SadakSaarthiApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'UrbanSense',
+      title: 'SadakSaarthi',
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF070B12),
         colorScheme: const ColorScheme.dark(primary: Color(0xFF3EE0B4)),
@@ -187,7 +188,7 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('URBANSENSE', style: TextStyle(fontSize: 28, letterSpacing: 3, color: Color(0xFF3EE0B4))),
+            const Text('SADAKSAARTHI', style: TextStyle(fontSize: 24, letterSpacing: 2, color: Color(0xFF3EE0B4))),
             const SizedBox(height: 8),
             const Text('Phone edge — IMU+GPS, no YOLO, no video', textAlign: TextAlign.center),
             TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
@@ -216,6 +217,7 @@ class _HomeShellState extends State<HomeShell> {
     final pages = [
       const EdgeConsole(),
       const SensorHome(),
+      const FieldWebLens(),
       if (inspector) const InspectorHome(),
       const EventsList(),
     ];
@@ -227,6 +229,7 @@ class _HomeShellState extends State<HomeShell> {
         destinations: [
           const NavigationDestination(icon: Icon(Icons.bolt), label: 'Edge'),
           const NavigationDestination(icon: Icon(Icons.sensors), label: 'Node'),
+          const NavigationDestination(icon: Icon(Icons.videocam), label: 'Lens'),
           if (inspector) const NavigationDestination(icon: Icon(Icons.badge), label: 'Inspector'),
           const NavigationDestination(icon: Icon(Icons.list), label: 'Events'),
         ],
@@ -880,7 +883,14 @@ On device this would open file picker. Using placeholder file as evidence_url.')
           const SizedBox(height: 8),
           OutlinedButton.icon(onPressed: _trySync, icon: const Icon(Icons.sync), label: Text(pending>0? 'SYNC NOW ($pending)':'SYNC NOW'), style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48))),
           const SizedBox(height:8),
-          const Text('Windshield • START sensing • ~1KB JSON on trigger • no YOLO on this phone', style: TextStyle(fontSize:12,color: Colors.white38), textAlign: TextAlign.center),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FieldWebLens())),
+            icon: const Icon(Icons.videocam),
+            label: const Text('ROAD LENS — same /field'),
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48), backgroundColor: const Color(0xFF0BB98A)),
+          ),
+          const SizedBox(height: 8),
+          const Text('IMU/GPS/SHM on this tab. Boxes live on Lens = Azure /field WebView, not a second YOLO.', style: TextStyle(fontSize:12,color: Colors.white38), textAlign: TextAlign.center),
         ],
       ),
     );
@@ -914,6 +924,7 @@ class _SensorLiveState extends State<SensorLive> {
   StreamSubscription? accSub;
   bool _busyStill = false;
   DateTime? _lastStillAt;
+  List<Map<String, dynamic>> boxes = [];
 
   @override
   void initState() {
@@ -938,10 +949,9 @@ class _SensorLiveState extends State<SensorLive> {
         cam = CameraController(cams.first, ResolutionPreset.medium, enableAudio: false);
         await cam!.initialize();
         camStatus = 'CAMERA LIVE';
-        overlay = 'PATROL LIVE — stills, not video';
-        unawaited(_probeEdge());
+        overlay = 'CAMERA LIVE — IMU stills. Road boxes: Lens tab /field';
         unawaited(EdgeService.I.start(apiBaseOverride: apiBase, busCodeOverride: Session.busCode));
-        patrolTick = Timer.periodic(const Duration(seconds: 6), (_) => _patrolTick());
+        patrolTick = Timer.periodic(const Duration(seconds: 4), (_) => _patrolTick());
       }
     } catch (_) {
       camStatus = 'CAMERA OFFLINE';
@@ -970,27 +980,22 @@ class _SensorLiveState extends State<SensorLive> {
 
   Future<void> _patrolTick() async {
     if (!mounted || _busyStill || cam == null || !cam!.value.isInitialized) return;
-    final speed = pos == null ? 0.0 : max(0, pos!.speed * 3.6);
     final imuSpike = ax != null && ax! > 16;
-    final moving = speed >= 8;
-    if (!moving && !imuSpike) return;
+    if (!imuSpike) return;
     final now = DateTime.now();
     if (_lastStillAt != null && now.difference(_lastStillAt!).inSeconds < 8) return;
-    await _emit(patrol: true, trigger: imuSpike ? 'imu' : 'interval');
+    await _emit(patrol: true, trigger: 'imu');
   }
 
-  Future<void> _probeEdge() async {
-    if (cam == null || !cam!.value.isInitialized || Session.token == null) return;
-    try {
-      final shot = await cam!.takePicture();
-      final req = http.MultipartRequest('POST', Uri.parse('$apiBase/ingest/phone/probe'));
-      req.headers['Authorization'] = 'Bearer ${Session.token}';
-      req.files.add(await http.MultipartFile.fromPath('file', shot.path));
-      final streamed = await req.send();
-      if (streamed.statusCode >= 200 && streamed.statusCode < 300 && mounted) {
-        setState(() => overlay = 'EDGE CHECK OK (no event written)');
-      }
-    } catch (_) {}
+  void _applyDetections(Map<String, dynamic> j) {
+    final extra = (j['event'] is Map) ? (j['event'] as Map)['extra'] : null;
+    final raw = (j['detections'] as List?) ?? (extra is Map ? extra['detections'] as List? : null) ?? const [];
+    boxes = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    if (boxes.isNotEmpty) {
+      final top = boxes.first;
+      final pct = ((top['confidence'] as num?) ?? 0) * 100;
+      overlay = '${top['klass'] ?? top['event_type']} ${pct.round()}% — Azure RDD';
+    }
   }
 
   Future<void> _emit({bool forceOffline = false, bool patrol = false, String trigger = 'manual'}) async {
@@ -1050,9 +1055,10 @@ class _SensorLiveState extends State<SensorLive> {
             final sources = ev['source_count'] ?? 1;
             if (mounted) {
               setState(() {
-                overlay = created
-                    ? 'FIRST SIGHTING $code — waiting 2nd bus'
-                    : 'FUSED $code · $sources buses';
+                _applyDetections(j);
+                overlay = boxes.isNotEmpty
+                    ? '${boxes.first['klass']} · ${created ? 'FIRST $code' : 'FUSED $code · $sources'}'
+                    : (created ? 'FIRST SIGHTING $code — waiting 2nd bus' : 'FUSED $code · $sources buses');
               });
             }
           } catch (_) {
@@ -1082,7 +1088,10 @@ class _SensorLiveState extends State<SensorLive> {
       fit: StackFit.expand,
       children: [
         if (cam != null && cam!.value.isInitialized)
-          CameraPreview(cam!)
+          Stack(fit: StackFit.expand, children: [
+            CameraPreview(cam!),
+            CustomPaint(painter: RddBoxPainter(boxes), child: const SizedBox.expand()),
+          ])
         else
           Container(color: Colors.black, alignment: Alignment.center, child: Column(mainAxisSize: MainAxisSize.min, children:[const Icon(Icons.videocam_off, color: Colors.white24, size:36), const SizedBox(height:8), Text(camStatus, style: const TextStyle(color: Colors.white54, fontSize:12)), const SizedBox(height:4), const Text('Mount on windshield for road view', style: TextStyle(color: Colors.white24, fontSize:10))])),
         // HUD overlay — top bar + bottom action
@@ -1132,7 +1141,7 @@ class _SensorLiveState extends State<SensorLive> {
                       Expanded(child: Tooltip(message: 'Refresh GPS location', child: OutlinedButton.icon(onPressed: () async { final p=await Geolocator.getCurrentPosition().catchError((_)=>pos); if(p!=null) setState(()=>pos=p as Position); }, icon: const Icon(Icons.my_location, size:16), label: const Text('REFRESH GPS'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white70, side: BorderSide(color: Colors.white.withValues(alpha: 0.15)))))),
                     ]),
                     const SizedBox(height:6),
-                    const Text('Live stills while moving or IMU bump • 2nd bus confirms • vibration = bridge/road • no video stream', style: TextStyle(fontSize:9,color: Colors.white38), textAlign: TextAlign.center),
+                    const Text('IMU/GPS on this tab. Road boxes: Lens = same /field WebView. 2nd bus confirms.', style: TextStyle(fontSize:9,color: Colors.white38), textAlign: TextAlign.center),
                   ]),
                 ),
               ],
@@ -1144,6 +1153,33 @@ class _SensorLiveState extends State<SensorLive> {
   }
 
   Widget _hud(String k, String v) => Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[Text(k, style: const TextStyle(fontSize:9,letterSpacing:.7,fontWeight:FontWeight.w700,color: Colors.white38)), const SizedBox(height:2), Text(v, style: const TextStyle(fontSize:10,fontWeight:FontWeight.w700,color: Colors.white), maxLines:1, overflow: TextOverflow.ellipsis)]));
+}
+
+class RddBoxPainter extends CustomPainter {
+  RddBoxPainter(this.boxes);
+  final List<Map<String, dynamic>> boxes;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = const Color(0xFFE85D4C);
+    for (final row in boxes) {
+      final b = row['bbox'];
+      if (b is! List || b.length < 4) continue;
+      final rect = Rect.fromLTRB(
+        (b[0] as num).toDouble() * size.width,
+        (b[1] as num).toDouble() * size.height,
+        (b[2] as num).toDouble() * size.width,
+        (b[3] as num).toDouble() * size.height,
+      );
+      canvas.drawRect(rect, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant RddBoxPainter oldDelegate) => true;
 }
 
 class QrScanPage extends StatefulWidget {

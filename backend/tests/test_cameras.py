@@ -15,6 +15,23 @@ def test_presets_list_vendors(client, admin_token):
     assert {"BROWSER", "FILE_EXPORT", "CP_PLUS", "HP_DVR", "CUBIC_WIFI", "RTSP_HINT"} <= ids
     rtsp = next(row for row in r.json()["items"] if row["id"] == "RTSP_HINT")
     assert rtsp["honesty"] == "DISABLED"
+    assert "cctv-bridge.ps1" in rtsp["how"]
+    assert "-Loop" in rtsp["how"]
+    assert "run_camera.py" in rtsp["how"]
+    body = r.json()
+    assert "cctv-bridge.ps1" in body["note"]
+
+
+def test_field_token_can_register_camera(client, admin_token):
+    code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
+    token = client.post("/auth/field-join", json={"code": code}).json()["access_token"]
+    r = client.post(
+        "/cameras",
+        headers=auth_header(token),
+        json={"code": "CAM-FIELD-01", "vendor": "BROWSER", "bay": "FRONT"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["code"] == "CAM-FIELD-01"
 
 
 def test_register_and_cctv_still(client, admin_token):

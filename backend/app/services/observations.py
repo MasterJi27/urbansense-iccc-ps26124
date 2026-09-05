@@ -14,6 +14,7 @@ from app.realtime.hub import hub
 from app.schemas.common import EventOut, ObservationIn
 from app.services.audit import audit
 from app.services.azure_edge import save_evidence_blob
+from app.services.composio_notify import notify_fleet_confirmed
 from app.services.departments import attach_department
 from app.services.extras import sanitize_extra
 from app.services.fusion import FusionEngine, default_engine
@@ -81,6 +82,9 @@ def ingest_observation(
     attach_department(fusion.event)
     db.commit()
     db.refresh(fusion.event)
+    extra = fusion.event.extra or {}
+    if extra.get("patrol_state") == "FLEET_CONFIRMED" and (fusion.event.source_count or 0) == 2:
+        notify_fleet_confirmed(fusion.event)
     return obs, fusion.event, fusion.created
 
 

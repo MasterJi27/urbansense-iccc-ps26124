@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -16,6 +16,20 @@ class ProcessingMode(str, Enum):
     EDGE_GATEWAY = "EDGE_GATEWAY"
 
 
+class Ward(Base):
+    """Municipal ward. Buses are allocated here so a phone feed belongs to a desk."""
+
+    __tablename__ = "wards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    number: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    zone: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    buses = relationship("Bus", back_populates="ward")
+
+
 class Bus(Base):
     __tablename__ = "buses"
 
@@ -23,11 +37,13 @@ class Bus(Base):
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     registration: Mapped[str] = mapped_column(String(32), default="")
     route_id: Mapped[str | None] = mapped_column(ForeignKey("routes.id"), nullable=True)
+    ward_id: Mapped[str | None] = mapped_column(ForeignKey("wards.id"), nullable=True)
     qr_payload: Mapped[str] = mapped_column(String(255), unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     route = relationship("Route")
+    ward = relationship("Ward", back_populates="buses")
     sensor_nodes = relationship("SensorNode", back_populates="bus")
 
 
@@ -68,6 +84,12 @@ class SensorNode(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     heading: Mapped[float | None] = mapped_column(Float, nullable=True)
     speed_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_evidence_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    last_detect_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    patrol_mode: Mapped[str] = mapped_column(String(16), default="AUTO")
+    last_boxes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    person_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overlay_fps: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     bus = relationship("Bus", back_populates="sensor_nodes")

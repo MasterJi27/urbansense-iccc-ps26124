@@ -23,6 +23,23 @@ def bounding_box(lat: float, lon: float, radius_m: float) -> tuple[float, float,
     return lat - dlat, lat + dlat, lon - dlon, lon + dlon
 
 
+def offset_by_heading(lat: float, lon: float, heading_deg: float, meters: float) -> tuple[float, float]:
+    """Move a point along a compass heading. Used to drop the pin on the defect ahead, not on the phone."""
+    validate_coords(lat, lon)
+    if meters <= 0:
+        return lat, lon
+    bearing = math.radians(heading_deg % 360.0)
+    ang = meters / EARTH_RADIUS_M
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+    lat2 = math.asin(math.sin(lat1) * math.cos(ang) + math.cos(lat1) * math.sin(ang) * math.cos(bearing))
+    lon2 = lon1 + math.atan2(
+        math.sin(bearing) * math.sin(ang) * math.cos(lat1),
+        math.cos(ang) - math.sin(lat1) * math.sin(lat2),
+    )
+    return math.degrees(lat2), ((math.degrees(lon2) + 540.0) % 360.0) - 180.0
+
+
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)

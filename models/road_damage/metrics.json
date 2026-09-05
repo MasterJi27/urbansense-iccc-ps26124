@@ -1,29 +1,60 @@
 {
-  "honesty": "EXPERIMENTAL",
-  "evaluated": false,
-  "dataset": "RDD2022 India (CRDDC)",
-  "note": "No --data yaml. Download RDD2022 India, convert VOC\u2192YOLO, then re-run. Do not quote sivakanth/oracl4 mAP as UrbanSense.",
+  "honesty": "REAL",
+  "evaluated": true,
+  "dataset": "RDD2022 India (CRDDC) \u2014 this host",
+  "note": "Held-out test (323 images) after slow fine-tune (lr0=0.001, freeze=10). Not the old 654-image val — do not treat 0.508 to 0.619 as the same split. D10 test has only 6 boxes, so that class AP is noisy. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours.",
+  "map50": 0.6189,
+  "map50_95": 0.2924,
+  "eval_split": "test",
+  "split": {
+    "train": 2983,
+    "val": 331,
+    "test": 323,
+    "seed": 42,
+    "keep": [
+      "D00",
+      "D10",
+      "D20",
+      "D40"
+    ],
+    "test_boxes": { "D00": 152, "D10": 6, "D20": 215, "D40": 335 }
+  },
+  "recipe": {
+    "lr0": 0.001,
+    "freeze": 10,
+    "epochs": 50,
+    "d10_train_repeat": 10
+  },
+  "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
   "classes": [
     {
       "id": "D00",
       "name": "Longitudinal crack",
-      "maps_to": "ROAD_DAMAGE"
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.5887,
+      "index": 0
     },
     {
       "id": "D10",
       "name": "Transverse crack",
-      "maps_to": "ROAD_DAMAGE"
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.5365,
+      "index": 1
     },
     {
       "id": "D20",
       "name": "Alligator crack",
-      "maps_to": "ROAD_DAMAGE"
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.762,
+      "index": 2
     },
     {
       "id": "D40",
       "name": "Pothole",
-      "maps_to": "POTHOLE"
+      "maps_to": "POTHOLE",
+      "map50": 0.5882,
+      "index": 3
     }
   ],
-  "updated_at": "2026-09-05T14:54:23.781491+00:00"
+  "updated_at": "2026-09-05T17:16:49.983086+00:00"
 }

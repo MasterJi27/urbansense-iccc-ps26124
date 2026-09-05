@@ -8,6 +8,7 @@ MODELS = ROOT / "models"
 
 RDD_URL = "https://github.com/oracl4/RoadDamageDetection/raw/main/models/YOLOv8_Small_RDD.pt"
 RDD_PATH = MODELS / "road_damage" / "YOLOv8_Small_RDD.pt"
+INDIA_PATH = MODELS / "road_damage" / "YOLOv8s_RDD_india.pt"
 COCO_PATH = MODELS / "traffic" / "yolov8n.pt"
 SIGN_PATH = MODELS / "traffic_sign" / "best.pt"
 PLATE_PATH = MODELS / "anpr" / "plate.pt"
@@ -34,6 +35,8 @@ def resolve_rdd() -> Path | None:
     env = os.environ.get("URBANSENSE_RDD_WEIGHTS")
     if env and Path(env).exists():
         return Path(env)
+    if INDIA_PATH.exists() and INDIA_PATH.stat().st_size > 1_000_000:
+        return INDIA_PATH
     if RDD_PATH.exists():
         return RDD_PATH
     try:

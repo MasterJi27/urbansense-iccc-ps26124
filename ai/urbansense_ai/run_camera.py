@@ -15,6 +15,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import urllib.request
 
 
+def due_for_post(last_post_at: float | None, now: float, interval_sec: float) -> bool:
+    """Throttle Azure posts. Local display can still run every frame."""
+    if interval_sec <= 0:
+        return True
+    if last_post_at is None:
+        return True
+    return (now - last_post_at) >= interval_sec
+
+
 def login(base: str, email: str, password: str) -> str:
     req = urllib.request.Request(
         f"{base}/auth/login",
@@ -46,6 +55,12 @@ def main() -> None:
     p.add_argument("--source-id", default="WEBCAM-01")
     p.add_argument("--display", action="store_true")
     p.add_argument("--max-frames", type=int, default=0)
+    p.add_argument(
+        "--interval",
+        type=float,
+        default=2.5,
+        help="Seconds between POSTs to Azure. Local RTSP/webcam still runs on this PC — not App Service GPU.",
+    )
     args = p.parse_args()
     if not args.password:
         p.error("pass --password or set URBANSENSE_PASSWORD")
@@ -65,22 +80,32 @@ def main() -> None:
     ctx = FrameContext(latitude=args.lat, longitude=args.lon, source_id=args.source_id)
     n = 0
     t0 = time.time()
+    last_post: float | None = None
+    interval = max(0.5, float(args.interval or 2.5))
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         n += 1
+        now = time.time()
+        due = due_for_post(last_post, now, interval)
+        if not args.display and not due:
+            if args.max_frames and n >= args.max_frames:
+                break
+            continue
         payloads = pipe.process(frame, ctx)
-        for body in payloads:
-            try:
-                r = post_obs(args.api.rstrip("/"), token, body)
-                print(
-                    f"posted {body['event_type']} sim={body['simulated']} "
-                    f"status={body.get('extra', {}).get('ai_status')} "
-                    f"event={r.get('event', {}).get('public_code')}"
-                )
-            except Exception as exc:
-                print("post failed", exc)
+        if due:
+            for body in payloads:
+                try:
+                    r = post_obs(args.api.rstrip("/"), token, body)
+                    print(
+                        f"posted {body['event_type']} sim={body['simulated']} "
+                        f"status={body.get('extra', {}).get('ai_status')} "
+                        f"event={r.get('event', {}).get('public_code')}"
+                    )
+                except Exception as exc:
+                    print("post failed", exc)
+            last_post = time.time()
         if args.display:
             cv2.imshow("UrbanSense", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):

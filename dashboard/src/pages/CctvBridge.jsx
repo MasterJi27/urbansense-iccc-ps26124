@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import DetectionOverlay from "../components/DetectionOverlay.jsx";
+import { useFieldOverlay } from "../field/useFieldOverlay.js";
 import { api, getToken, setSession } from "../api";
 import { useUi } from "../i18n.jsx";
 
-async function blobFromVideo(video) {
-  if (!video || !video.videoWidth) throw new Error("Lens not ready");
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("JPEG encode failed"))), "image/jpeg", 0.82);
-  });
+function asBusFromCctv(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits) return `BUS-${digits.padStart(3, "0")}`;
+  const up = String(raw || "").toUpperCase();
+  return up.startsWith("BUS-") ? up : "BUS-017";
 }
+
+const CCTV_BAYS = ["FRONT", "REAR", "LEFT", "RIGHT"];
 
 function demoStillBlob(vendor, code) {
   const canvas = document.createElement("canvas");
@@ -49,16 +49,61 @@ export default function CctvBridge() {
   const [cameras, setCameras] = useState([]);
   const [vendor, setVendor] = useState("BROWSER");
   const [mode, setMode] = useState("LENS");
-  const [code, setCode] = useState(params.get("cam") || "CAM-DVR-01");
-  const [busId, setBusId] = useState(params.get("bus") || "BUS-042");
-  const [bay, setBay] = useState("FRONT");
-  const [kind, setKind] = useState("BUS_CCTV");
+  const [busNum, setBusNum] = useState(() => {
+    const raw = params.get("bus") || "17";
+    return String(raw).replace(/\D/g, "") || "17";
+  });
+  const [slot, setSlot] = useState(() => {
+    const n = Number(params.get("phone") || 1);
+    return n >= 1 && n <= 4 ? n : 1;
+  });
+  const busId = asBusFromCctv(busNum);
+  const bay = CCTV_BAYS[slot - 1];
+  const code = `${busId}-P${slot}`;
+  const kind = "BUS_CCTV";
   const [snapUrl, setSnapUrl] = useState("");
   const [camErr, setCamErr] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
-  const preset = presets.find((p) => p.id === vendor) || presets[0];
+  const [boxes, setBoxes] = useState([]);
+  const [patrol, setPatrol] = useState(true);
+
+  async function blobFromVideo() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) throw new Error("Lens not ready");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("JPEG encode failed"))), "image/jpeg", 0.82);
+    });
+  }
+
+  async function ingestStill(blob) {
+    await registerCam().catch(() => {});
+    const fd = new FormData();
+    fd.append("file", blob, `${code}.jpg`);
+    fd.append("latitude", "28.6328");
+    fd.append("longitude", "77.2195");
+    fd.append("source_id", code);
+    fd.append("bus_id", busId);
+    fd.append("camera_bay", bay);
+    fd.append("vendor", vendor);
+    fd.append("source_kind", kind);
+    return api("/ingest/cctv/still", { method: "POST", body: fd });
+  }
+
+  const overlay = useFieldOverlay({
+    authed: authed && mode === "LENS",
+    patrol,
+    videoRef,
+    blobFromVideo,
+    postStill: ingestStill,
+    setBoxes,
+    setResult,
+  });
 
   useEffect(() => {
     if (!authed) return undefined;
@@ -66,6 +111,33 @@ export default function CctvBridge() {
     api("/cameras").then(setCameras).catch(() => setCameras([]));
     return undefined;
   }, [authed]);
+
+  useEffect(() => {
+    if (!authed) return undefined;
+    const beat = () => {
+      api("/sensor-nodes/heartbeat", {
+        method: "POST",
+        body: JSON.stringify({
+          sensor_code: code,
+          bus_code: busId,
+          camera_status: streamRef.current ? "ONLINE" : "DEGRADED",
+          gps_status: "UNKNOWN",
+          imu_status: "UNKNOWN",
+          network_type: "CELL",
+          ai_mode: patrol ? "AUTO" : "MANUAL",
+          latitude: 28.6328,
+          longitude: 77.2195,
+          last_boxes: [...(overlay.lastBoxes.current || []), ...(overlay.lastPeople.current || [])],
+          person_count: (overlay.lastPeople.current || []).length,
+          overlay_fps: overlay.fpsRef?.current || 0,
+          overlay_mode: overlay.mode,
+        }),
+      }).catch(() => {});
+    };
+    beat();
+    const id = window.setInterval(beat, 3000);
+    return () => window.clearInterval(id);
+  }, [authed, busId, code, patrol, overlay.mode]);
 
   useEffect(() => {
     const row = presets.find((p) => p.id === vendor);
@@ -98,7 +170,7 @@ export default function CctvBridge() {
           await videoRef.current.play().catch(() => {});
         }
       } catch (ex) {
-        if (!dead) setCamErr(ex.message || "Lens denied. Use FILE export or DEMO still.");
+        if (!dead) setCamErr(ex.message || "Camera closed. Use a photo from the gallery.");
       }
     })();
     return () => {
@@ -135,18 +207,10 @@ export default function CctvBridge() {
     setResult(null);
     setBusy("still");
     try {
-      await registerCam().catch(() => {});
-      const fd = new FormData();
-      fd.append("file", blob, `${code}.jpg`);
-      fd.append("latitude", "28.6328");
-      fd.append("longitude", "77.2195");
-      fd.append("source_id", code);
-      fd.append("bus_id", busId);
-      fd.append("camera_bay", bay);
-      fd.append("vendor", vendor);
-      fd.append("source_kind", kind);
-      const ingested = await api("/ingest/cctv/still", { method: "POST", body: fd });
+      const ingested = await ingestStill(blob);
       const ev = ingested.event || {};
+      const found = ingested.detections || ev.extra?.detections || [];
+      setBoxes(found);
       setResult({
         path: extra.path || ev.extra?.ai_status || "RULE_BASED",
         title: ev.public_code,
@@ -154,7 +218,9 @@ export default function CctvBridge() {
         created: ingested.created_event,
         patrol: ev.extra?.patrol_state,
         eventId: ev.id,
-        note: extra.note || "One JPEG ingested. Not a live NVR stream.",
+        note: found.length
+          ? `${found.length} box(es) on this photo.`
+          : (extra.note || "Photo sent. No box on this frame."),
       });
       setCameras(await api("/cameras").catch(() => cameras));
     } catch (ex) {
@@ -166,13 +232,13 @@ export default function CctvBridge() {
   }
 
   async function senseLens() {
-    const blob = await blobFromVideo(videoRef.current);
-    await postStill(blob, { path: "REAL", note: "Browser / USB / phone lens. Same still pipeline as every DVR." });
+    const blob = await blobFromVideo();
+    await postStill(blob, { path: "REAL", note: "This phone / tablet camera." });
   }
 
   async function senseFile(file) {
     if (!file) return;
-    await postStill(file, { path: "RULE_BASED", note: "JPEG exported from vendor DVR software. We never talk that vendor protocol." });
+    await postStill(file, { path: "RULE_BASED", note: "Photo from the Wi-Fi camera app." });
   }
 
   async function senseDemo() {
@@ -204,7 +270,7 @@ export default function CctvBridge() {
         type: ev.event_type,
         created: ingested.created_event,
         eventId: ev.id,
-        note: "HTTP snapshot pulled. Password is not stored. RTSP is not decoded.",
+        note: "HTTP snapshot pulled. Password is not stored. RTSP is not decoded. Live boxes on this page are the browser lens, not the DVR JPEG.",
       });
     } catch (ex) {
       setErr(ex.message);
@@ -227,11 +293,35 @@ export default function CctvBridge() {
         <form className="field-join" onSubmit={join}>
           <h1>{t("cctvJoinTitle")}</h1>
           <p className="muted">{t("cctvJoinSub")}</p>
+          <p className="how-kicker">{t("howTitle")}</p>
+          <ol className="how-simple">
+            <li>{t("how1")}</li>
+            <li>{t("how2")}</li>
+            <li>{t("how3")}</li>
+            <li>{t("how4")}</li>
+          </ol>
           <label htmlFor="cctv-pin">{t("fieldPin")}</label>
           <input id="cctv-pin" className="field-pin" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+          <label htmlFor="cctv-bus">{t("fieldBusNum")}</label>
+          <input
+            id="cctv-bus"
+            className="field-num"
+            inputMode="numeric"
+            value={busNum}
+            onChange={(e) => setBusNum(e.target.value.replace(/\D/g, "").slice(0, 3))}
+            placeholder="17"
+          />
+          <p className="muted" style={{ fontSize: 15, margin: 0 }}>{t("fieldPhoneWhich")}</p>
+          <div className="phone-slots">
+            {[1, 2, 3, 4].map((n) => (
+              <button key={n} className={`chip ${slot === n ? "active" : ""}`} type="button" aria-pressed={slot === n} onClick={() => setSlot(n)}>
+                {t("fieldPhoneN")} {n}
+              </button>
+            ))}
+          </div>
+          <p className="muted" style={{ fontSize: 14, margin: 0 }}>{t("fieldFourPhones")}</p>
           {joinErr && <div role="alert" className="err">{joinErr}</div>}
-          <button className="btn folio-stamp" type="submit" disabled={pin.length < 6}>{t("fieldPing")}</button>
-          <Link className="muted" to="/login?next=/cctv">{t("fieldIcccLogin")}</Link>
+          <button className="btn folio-stamp" type="submit" disabled={pin.length < 6 || !busNum}>{t("fieldPing")}</button>
         </form>
       </div>
     );
@@ -250,46 +340,46 @@ export default function CctvBridge() {
         </div>
       </header>
 
-      <p className="muted" style={{ fontSize: 13 }}>{t("cctvHonest")}</p>
+      <div className="field-status" role="status">
+        <span className="tag real">{busId}</span>
+        <span className="tag info">{t("fieldPhoneN")} {slot}</span>
+        <span className={`tag ${patrol ? "real" : "rule"}`}>{patrol ? t("fieldAuto") : t("fieldManual")}</span>
+        {mode === "LENS" && (
+          <span className={`tag ${overlay.mode === "ondevice" ? "real" : overlay.mode === "cloud" ? "rule" : "off"}`}>
+            {overlay.mode === "ondevice" ? t("fieldOnDevice") : overlay.mode === "cloud" ? t("fieldCloudPreview") : t("fieldWait")}
+          </span>
+        )}
+        {mode === "LENS" && <span className="tag info">{t("fieldPeople")} {overlay.personCount}</span>}
+      </div>
 
-      <div className="field-row">
-        {["LENS", "FILE", "HTTP", "DEMO"].map((m) => (
-          <button key={m} className={`chip ${mode === m ? "active" : ""}`} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>{t(`cctvMode${m}`)}</button>
-        ))}
+      <p className="muted" style={{ fontSize: 15 }}>{t("cctvWifiWhy")}</p>
+
+      <div className="easy-pick">
+        <button className={`chip ${mode === "LENS" ? "active" : ""}`} type="button" onClick={() => { setMode("LENS"); setVendor("BROWSER"); }}>
+          {t("cctvEasyPhone")}
+        </button>
+        <button className={`chip ${mode === "FILE" ? "active" : ""}`} type="button" onClick={() => setMode("FILE")}>
+          {t("cctvEasyPhoto")}
+        </button>
       </div>
 
       <label className="field-bus">
-        <span>{t("cctvVendor")}</span>
-        <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
-          {(presets.length ? presets : [{ id: "BROWSER", label: "Browser lens" }]).map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
-          ))}
-        </select>
+        <span>{t("fieldBusNum")}</span>
+        <input className="field-num" value={busNum} onChange={(e) => setBusNum(e.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" />
       </label>
-      {preset && <p className="muted" style={{ fontSize: 12, margin: 0 }}>{preset.how} <span className={`tag ${preset.honesty === "REAL" ? "real" : preset.honesty === "DISABLED" ? "off" : "rule"}`}>{preset.honesty}</span></p>}
-
-      <div className="field-row">
-        <label className="field-bus" style={{ flex: 1 }}>
-          <span>{t("cctvCode")}</span>
-          <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
-        </label>
-        <label className="field-bus" style={{ flex: 1 }}>
-          <span>{t("fieldBus")}</span>
-          <input value={busId} onChange={(e) => setBusId(e.target.value.toUpperCase())} />
-        </label>
-      </div>
-      <div className="field-row">
-        {["FRONT", "REAR", "LEFT", "RIGHT", "CABIN"].map((b) => (
-          <button key={b} className={`chip ${bay === b ? "active" : ""}`} type="button" onClick={() => setBay(b)}>{b}</button>
+      <p className="muted" style={{ fontSize: 15 }}>{t("fieldPhoneWhich")}</p>
+      <div className="phone-slots">
+        {[1, 2, 3, 4].map((n) => (
+          <button key={n} className={`chip ${slot === n ? "active" : ""}`} type="button" aria-pressed={slot === n} onClick={() => setSlot(n)}>
+            {t("fieldPhoneN")} {n}
+          </button>
         ))}
-        <button className={`chip ${kind === "ROAD_CCTV" ? "active" : ""}`} type="button" onClick={() => setKind((k) => (k === "ROAD_CCTV" ? "BUS_CCTV" : "ROAD_CCTV"))}>
-          {kind === "ROAD_CCTV" ? t("cctvRoad") : t("cctvBus")}
-        </button>
       </div>
 
       {mode === "LENS" && (
         <div className="field-stage">
           <video ref={videoRef} className="field-video" playsInline muted autoPlay />
+          <DetectionOverlay boxes={boxes} />
           {camErr && <div className="field-cam-fallback"><p>{camErr}</p></div>}
         </div>
       )}
@@ -301,17 +391,41 @@ export default function CctvBridge() {
         </div>
       )}
 
-      {mode === "HTTP" && (
-        <label className="field-bus">
-          <span>{t("cctvSnapUrl")}</span>
-          <input value={snapUrl} onChange={(e) => setSnapUrl(e.target.value)} placeholder={preset?.url_hint || "http://192.168.1.64/snapshot.jpg"} />
-          <span className="muted" style={{ fontSize: 11, textTransform: "none", letterSpacing: 0 }}>{t("cctvSnapHint")}</span>
-        </label>
-      )}
-
-      {mode === "DEMO" && <p className="muted" style={{ fontSize: 13 }}>{t("cctvDemoHint")}</p>}
+      <details className="field-more">
+        <summary>{t("fieldMore")}</summary>
+        <p className="muted" style={{ fontSize: 14 }}>{t("cctvSnapHint")}</p>
+        {mode === "HTTP" && (
+          <label className="field-bus">
+            <span>{t("cctvSnapUrl")}</span>
+            <input value={snapUrl} onChange={(e) => setSnapUrl(e.target.value)} placeholder="depot only" />
+          </label>
+        )}
+        <div className="field-row">
+          <button className="btn ghost" type="button" onClick={() => setMode("HTTP")}>{t("cctvModeHTTP")}</button>
+          <button className="btn ghost" type="button" onClick={() => setMode("DEMO")}>{t("cctvModeDEMO")}</button>
+        </div>
+        {mode === "HTTP" && <button className="btn folio-stamp" type="button" disabled={!!busy || !snapUrl} onClick={sensePull}>{t("cctvPull")}</button>}
+        {mode === "DEMO" && <button className="btn folio-stamp" type="button" disabled={!!busy} onClick={senseDemo}>{t("cctvDemo")}</button>}
+        {cameras.length > 0 && (
+          <div>
+            <h4 style={{ margin: "12px 0 6px" }}>{t("cctvBound")}</h4>
+            {cameras.slice(0, 8).map((c) => (
+              <div key={c.id} className="stat-row">
+                <span className="mono">{c.code}</span>
+                <span className="muted">{c.device_label} · {c.bus_code || "ROAD"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="muted" style={{ fontSize: 13 }}>{t("cctvScript")}</p>
+      </details>
 
       <div className="field-row">
+        {mode === "LENS" && (
+          <button className="chip" type="button" aria-pressed={patrol} onClick={() => setPatrol((on) => !on)}>
+            {patrol ? t("fieldAuto") : t("fieldManual")}
+          </button>
+        )}
         {mode === "LENS" && <button className="btn folio-stamp field-sense" type="button" disabled={!!busy} onClick={senseLens}>{busy ? "…" : t("cctvSense")}</button>}
         {mode === "HTTP" && <button className="btn folio-stamp field-sense" type="button" disabled={!!busy || !snapUrl} onClick={sensePull}>{busy ? "…" : t("cctvPull")}</button>}
         {mode === "DEMO" && <button className="btn folio-stamp field-sense" type="button" disabled={!!busy} onClick={senseDemo}>{busy ? "…" : t("cctvDemo")}</button>}
@@ -330,19 +444,7 @@ export default function CctvBridge() {
           {result.eventId && <Link to={`/events/${result.eventId}`}>{t("fieldOpenEvent")}</Link>}
         </div>
       )}
-
-      {cameras.length > 0 && (
-        <div>
-          <h4 style={{ margin: "12px 0 6px" }}>{t("cctvBound")}</h4>
-          {cameras.slice(0, 8).map((c) => (
-            <div key={c.id} className="stat-row">
-              <span className="mono">{c.code}</span>
-              <span className="muted">{c.device_label} · {c.bus_code || "ROAD"}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <p className="muted field-honest">{t("cctvScript")}</p>
+      <p className="muted field-honest">{t("cctvHonest")}</p>
     </div>
   );
 }

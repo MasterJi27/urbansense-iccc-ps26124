@@ -144,7 +144,7 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
   location: location
   tags: tags
-  sku: { name: 'B1', tier: 'Basic' }
+  sku: { name: 'B3', tier: 'Basic' }
   kind: 'linux'
   properties: { reserved: true }
 }
@@ -165,7 +165,7 @@ resource web 'Microsoft.Web/sites@2023-12-01' = {
       minTlsVersion: '1.2'
       appSettings: [
         { name: 'APP_ENV', value: 'production' }
-        { name: 'APP_NAME', value: 'UrbanSense' }
+        { name: 'APP_NAME', value: 'SadakSaarthi' }
         { name: 'DEMO_SEED_ON_START', value: 'true' }
         { name: 'EVIDENCE_DIR', value: '/home/web_sierra/wwwroot/storage/evidence' }
         { name: 'PUBLIC_BASE_URL', value: 'https://${webName}.azurewebsites.net' }

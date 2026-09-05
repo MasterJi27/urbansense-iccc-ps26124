@@ -3,8 +3,8 @@ import 'package:urbansense_mobile/main.dart';
 
 void main() {
   testWidgets('login screen renders', (tester) async {
-    await tester.pumpWidget(const UrbanSenseApp());
-    expect(find.text('URBANSENSE'), findsOneWidget);
+    await tester.pumpWidget(const SadakSaarthiApp());
+    expect(find.text('SADAKSAARTHI'), findsOneWidget);
     expect(find.text('Login'), findsOneWidget);
   });
 }

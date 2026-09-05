@@ -22,8 +22,16 @@ _DEFAULT = {
 
 
 def metrics_path() -> Path:
-    root = Path(__file__).resolve().parents[3]
-    return root / "models" / "road_damage" / "metrics.json"
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[3] / "models" / "road_damage" / "metrics.json",
+        here.parents[2] / "models" / "road_damage" / "metrics.json",
+        Path.cwd() / "models" / "road_damage" / "metrics.json",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
 
 
 def load_model_metrics() -> dict:

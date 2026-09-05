@@ -1,4 +1,4 @@
-from app.geo import bounding_box, haversine_m, validate_coords
+from app.geo import bounding_box, haversine_m, offset_by_heading, validate_coords
 
 
 def test_bounding_box_keeps_40m_neighbour():
@@ -13,6 +13,12 @@ def test_bounding_box_keeps_40m_neighbour():
 def test_bounding_box_excludes_other_city():
     lat_min, lat_max, lon_min, lon_max = bounding_box(28.6328, 77.2195, 60)
     assert not (lat_min <= 19.07 <= lat_max and lon_min <= 72.87 <= lon_max)
+
+
+def test_offset_heading_west_is_about_requested_metres():
+    lat, lon = offset_by_heading(28.6328, 77.2195, 270, 25)
+    assert lon < 77.2195
+    assert 20 < haversine_m(28.6328, 77.2195, lat, lon) < 30
 
 
 def test_validate_coords_rejects_out_of_range():

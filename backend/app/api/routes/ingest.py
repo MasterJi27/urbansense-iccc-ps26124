@@ -1,5 +1,7 @@
 """Unified ingestion gateway. Future CCTV/IoT devices post the same Observation model."""
 
+from uuid import uuid4
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,8 +20,12 @@ from app.services.azure_edge import (
     screen_still,
     validate_still,
 )
+from app.services.bbox_severity import severity_from_boxes
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
+from app.services.ahead_gps import project_ahead
+from app.services.imu_rules import shake_event_type
 from app.services.ps26124 import apply_camera_bay
+from app.services.rdd_cloud import detect_rdd, rdd_cloud_status, top_event
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -33,10 +39,13 @@ async def _ingest(body: ObservationIn, source: SourceType, db: Session, user: Us
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     background.add_task(publish_event, event, created)
+    extra = body.extra if isinstance(getattr(body, "extra", None), dict) else {}
     return {
         "observation": sanitize_observation(ObservationOut.model_validate(obs).model_dump(mode="json"), user),
         "event": sanitize_event(EventOut.model_validate(event).model_dump(mode="json"), user),
         "created_event": created,
+        "detections": extra.get("detections") or [],
+        "rdd": extra.get("rdd") or rdd_cloud_status(),
     }
 
 
@@ -69,37 +78,73 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
     if not safety.get("ok"):
         raise HTTPException(status_code=400, detail={"reason": "content_safety_blocked", "categories": safety.get("blocked")})
     url = save_evidence_bytes(name, data)
+    rdd = detect_rdd(data)
+    detections = rdd.get("detections") or []
+    top = top_event(detections)
     try:
         vision = analyze_still(data)
     except Exception as exc:
         vision = {"ok": False, "ai_status": "DISABLED", "reason": str(exc)}
 
     mapped = vision.get("mapped_event_type") if vision.get("ok") else None
-    event_type = EventType(mapped) if mapped else EventType.OTHER
     bay = (camera_bay or "FRONT").upper()
-    if not mapped and imu_mag is not None and bay != "CABIN":
-        event_type = EventType.POTHOLE
+    ahead = project_ahead(latitude, longitude, heading, top.get("bbox") if top else None)
+    if top:
+        event_type = EventType(top["event_type"])
+        graded = severity_from_boxes([{"x1": b[0], "y1": b[1], "x2": b[2], "y2": b[3]} for b in [top["bbox"]]], frame_w=1, frame_h=1)
+        severity = Severity(top["severity"]) if graded["bbox_frac"] < 0.05 else graded["severity"]
+        method = "azure-rdd-onnx"
+        ai_status = "REAL"
+        engine_status = "REAL"
+        model = rdd.get("model") or "YOLOv8s_RDD_india.onnx"
+        provider = "Azure App Service"
+        confidence = float(top["confidence"])
+        derivation = (
+            "Azure-hosted RDD YOLO on this still. Pin is walked ahead along heading from the box. "
+            "Lens is live; Azure sees sampled frames, not a 24×7 uploaded video."
+        )
+        latitude = ahead["latitude"]
+        longitude = ahead["longitude"]
+    else:
+        event_type = EventType(mapped) if mapped else EventType.OTHER
+        shaken = shake_event_type(imu_mag, speed_kmh, has_box=False) if bay != "CABIN" else None
+        if shaken and not mapped:
+            event_type = shaken
+        sev_raw = vision.get("mapped_severity") if vision.get("ok") else None
+        severity = Severity(sev_raw) if sev_raw else (Severity.HIGH if event_type in {EventType.POTHOLE, EventType.RASH_DRIVING} else Severity.MEDIUM)
+        method = "azure-ai-vision" if vision.get("ok") else ("phone-imu-shake" if shaken else "phone-still")
+        ai_status = vision.get("ai_status") or "DISABLED"
+        engine_status = vision.get("engine_status") or "RULE_BASED"
+        model = vision.get("model") or "none"
+        provider = vision.get("provider") or "azure"
+        confidence = 0.62 if vision.get("ok") else (0.5 if shaken else 0.45)
+        derivation = (
+            "Azure AI Vision caption/tags mapped to an UrbanSense type. RDD found no box on this still."
+            if vision.get("ok")
+            else (
+                "Accelerometer spike. Proximity is near/far only — shake is IMU. Not a crash classifier."
+                if shaken
+                else "Phone still stored. RDD found no box. Type from IMU fallback or OTHER."
+            )
+        )
     event_type, bay_note = apply_camera_bay(event_type, bay)
-    sev_raw = vision.get("mapped_severity") if vision.get("ok") else None
-    severity = Severity(sev_raw) if sev_raw else (Severity.HIGH if event_type == EventType.POTHOLE else Severity.MEDIUM)
     extra: dict = {
-        "method": "azure-ai-vision" if vision.get("ok") else "phone-still",
-        "model": vision.get("model") or "none",
-        "provider": vision.get("provider") or "local",
-        "ai_status": vision.get("ai_status") or "DISABLED",
-        "engine_status": vision.get("engine_status") or "RULE_BASED",
+        "method": method,
+        "model": model,
+        "provider": provider,
+        "ai_status": ai_status,
+        "engine_status": engine_status,
         "caption": vision.get("caption"),
         "azure_tags": vision.get("tags") or [],
         "azure_vision": vision,
+        "rdd": rdd,
+        "detections": detections,
         "content_safety": safety,
         "imu_mag": imu_mag,
         "patrol": True,
         "camera_bay": bay,
-        "derivation": (
-            "Azure AI Vision caption/tags mapped to an UrbanSense type. Not RDD YOLO and not a dedicated waterlogging net."
-            if vision.get("ok")
-            else "Phone still stored. Azure Vision not configured — type from IMU fallback or OTHER."
-        ),
+        "derivation": derivation,
+        "gps_ahead": ahead,
     }
     if event_type == EventType.WATERLOGGING:
         extra["derivation"] = (
@@ -117,13 +162,13 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
         source_type=source_type,
         source_id=source_id,
         bus_id=bus_id or None,
-        confidence=0.62 if vision.get("ok") else 0.45,
+        confidence=confidence,
         simulated=False,
         heading=heading,
         speed_kmh=speed_kmh,
         evidence_url=url,
         extra=extra,
-        client_id=f"phone-still-{name}",
+        client_id=f"phone-still-{uuid4().hex}",
     )
     return body, vision, safety, url
 
@@ -138,18 +183,20 @@ async def probe_phone_still(
         safety = screen_still(data)
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    vision = {"ok": False, "ai_status": "DISABLED"}
-    if safety.get("ok"):
-        try:
-            vision = analyze_still(data)
-        except Exception as exc:
-            vision = {"ok": False, "ai_status": "DISABLED", "reason": str(exc)}
+    rdd = detect_rdd(data) if safety.get("ok") else {"ok": False, "detections": [], "ai_status": "DISABLED"}
     return {
         "ok": bool(safety.get("ok")),
         "ingested": False,
         "bytes": len(data),
         "content_safety": safety,
-        "vision": vision,
+        "vision": {
+            "ok": False,
+            "ai_status": "DISABLED",
+            "skipped": True,
+            "reason": "Probe is RDD-only so Android/iPhone/CCTV can tick without a Vision round-trip.",
+        },
+        "rdd": rdd,
+        "detections": rdd.get("detections") or [],
         "stack": azure_stack_status(),
         "checked_by": user.email,
     }
@@ -238,15 +285,14 @@ async def ingest_cctv_still(
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     extra = dict(body.extra or {})
-    extra.update(
-        {
-            "method": "cctv-still",
-            "vendor": (vendor or "GENERIC").upper(),
-            "connector": "any-camera-bridge",
-            "derivation": extra.get("derivation")
-            or "One JPEG from an arbitrary camera/DVR. Not a live NVR stream and not continuous YOLO.",
-        }
-    )
+    extra["vendor"] = (vendor or "GENERIC").upper()
+    extra["connector"] = "any-camera-bridge"
+    if extra.get("method") != "azure-rdd-onnx":
+        extra["method"] = "cctv-still"
+        extra["derivation"] = (
+            extra.get("derivation")
+            or "One JPEG from an arbitrary camera/DVR. Not a live NVR stream and not continuous YOLO."
+        )
     body.extra = extra
     return await _ingest(body, kind, db, user, background)
 

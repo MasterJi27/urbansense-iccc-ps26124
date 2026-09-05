@@ -152,7 +152,7 @@ def azure_vision_status() -> dict:
         "ai_status": "REAL" if on else "DISABLED",
         "provider": "Azure AI Vision Image Analysis",
         "method": "azure-ai-vision",
-        "note": "Cloud still analysis for phone/edge photos. Not a replacement for local RDD YOLO.",
+        "note": "Cloud caption/tags. RDD YOLO on this App Service is the pothole/crack detector.",
         "configured": on,
     }
 

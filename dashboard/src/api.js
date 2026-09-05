@@ -48,7 +48,7 @@ export async function api(path, opts = {}) {
   }
   if (res.status === 401) {
     clearSession();
-    const onField = window.location.pathname.startsWith("/field") || window.location.pathname.startsWith("/cctv") || window.location.pathname.startsWith("/report");
+    const onField = window.location.pathname.startsWith("/field") || window.location.pathname.startsWith("/report");
     const joining = path.includes("/auth/login") || path.includes("/auth/field-join") || path.includes("/citizen/");
     if (!joining && !onField) {
       const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);

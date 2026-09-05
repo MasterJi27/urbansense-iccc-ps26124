@@ -1,7 +1,7 @@
 /** Verbatim first-viewport copy from the approved Ward Register comp. */
 
 export const COMP_FOLIO = {
-  wordmark: "URBANSENSE",
+  wordmark: "SADAKSAARTHI",
   register: "ICCC COMMAND REGISTER",
   folio: "FOLIO 07 - ENTRY 0153",
   serial: "ENTRY 0153",
@@ -74,11 +74,6 @@ export const NAV_TABS = [
   { to: "/events", hi: "घटनाएँ", en: "EVENTS" },
   { to: "/work-orders", hi: "वर्क ऑर्डर", en: "WORK ORDER" },
   { to: "/road-health", hi: "वार्ड", en: "WARD" },
-];
-
-export const CAPTURE_TABS = [
-  { to: "/field", hi: "फ़ील्ड", en: "FIELD" },
-  { to: "/cctv", hi: "सीसीटीवी", en: "CCTV" },
 ];
 
 export const ATLAS_TABS = [

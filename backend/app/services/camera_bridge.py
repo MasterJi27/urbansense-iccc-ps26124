@@ -65,7 +65,7 @@ PRESETS = [
         "label": "RTSP (Hikvision / Uniview / XM)",
         "protocol": "RTSP",
         "honesty": "DISABLED",
-        "how": "Azure does not decode RTSP. On the depot PC run scripts/cctv-bridge.ps1 against the snapshot URL, or use FILE export.",
+        "how": "Azure does not decode RTSP or run 24×7 GPU. On the depot PC: scripts/cctv-bridge.ps1 -Loop on the JPEG snapshot URL, or python ai/urbansense_ai/run_camera.py --source rtsp://…",
         "url_hint": "rtsp://USER:PASS@<ip>:554/cam/realmonitor?channel=1&subtype=0",
     },
 ]
@@ -89,7 +89,7 @@ def assert_snapshot_url(url: str, *, allow_private: bool | None = None, resolve:
         raise ValueError("snapshot URL missing or too long")
     parsed = urlparse(raw)
     if parsed.scheme == "rtsp":
-        raise ValueError("RTSP is not pulled here. Use the DVR JPEG snapshot URL, a file export, or scripts/cctv-bridge.ps1")
+        raise ValueError("RTSP is not pulled here. Use the DVR JPEG snapshot URL, scripts/cctv-bridge.ps1 -Loop, or python ai/urbansense_ai/run_camera.py --source rtsp://")
     if parsed.scheme not in {"http", "https"}:
         raise ValueError("snapshot must be http or https")
     host = (parsed.hostname or "").lower().rstrip(".")

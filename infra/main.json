@@ -260,7 +260,7 @@
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
               "sku": {
-                "name": "B1",
+                "name": "B3",
                 "tier": "Basic"
               },
               "kind": "linux",
@@ -293,7 +293,7 @@
                     },
                     {
                       "name": "APP_NAME",
-                      "value": "UrbanSense"
+                      "value": "SadakSaarthi"
                     },
                     {
                       "name": "DEMO_SEED_ON_START",

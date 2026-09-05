@@ -28,7 +28,6 @@ export default function WorkOrders() {
   const [zoneF,setZoneF]=useState("ALL");
   function load(){ api("/work-orders").then(setRows).catch((e)=>setErr(e.message)); }
   useEffect(load, []);
-  async function demo(){ await api("/demo/jury-run", { method:"POST", body:"{}" }); load(); }
   if (err) return <p className="err">{err}</p>;
   const zones = [...new Set(rows.map((w) => delhiZone(w.latitude, w.longitude).zone))].filter((z) => z && z !== "—");
   const view = (filter==="ALL"?rows:rows.filter(r=>r.status===filter)).filter((w)=>{
@@ -46,7 +45,6 @@ export default function WorkOrders() {
         <div className="filters">
           <select aria-label="Filter work orders by status" value={filter} onChange={e=>setFilter(e.target.value)}><option value="ALL">All statuses</option>{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select>
           <select aria-label="Filter by ICCC zone" value={zoneF} onChange={e=>setZoneF(e.target.value)}><option value="ALL">{t("zone")} — all</option>{zones.map((z)=><option key={z} value={z}>{z}</option>)}</select>
-          <button className="btn" onClick={demo}>JURY RUN (8 min)</button>
         </div>
       </div>
 

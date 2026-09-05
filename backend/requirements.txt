@@ -18,3 +18,6 @@ azure-storage-blob>=12.24
 azure-ai-vision-imageanalysis>=1.0.0
 azure-ai-contentsafety>=1.0.0
 openai>=1.60
+numpy>=2.0
+pillow>=10.0
+onnxruntime>=1.20

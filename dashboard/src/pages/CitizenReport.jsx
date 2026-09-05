@@ -69,7 +69,7 @@ export default function CitizenReport() {
     <div className="field-shell citizen-shell">
       <header className="field-head">
         <div>
-          <div className="folio-brand">URBANSENSE</div>
+          <div className="folio-brand">SADAKSAARTHI</div>
           <div className="folio-brand-sub">{t("citizenTitle")}</div>
         </div>
         <button className="lang-toggle" type="button" aria-pressed={lang === "hi"} onClick={toggleLang}>{t("lang")}</button>

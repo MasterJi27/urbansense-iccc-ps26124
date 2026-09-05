@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useUi } from "../i18n.jsx";
 import { useToast } from "./Toast.jsx";
@@ -47,25 +46,26 @@ export default function FieldBoothCard() {
       <div className="field-booth-grid">
         <div>
           <h4 style={{ margin: "0 0 6px" }}>{t("fieldBoothTitle")}</h4>
-          <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{t("fieldBoothSub")}</p>
-          <div className="stat-row"><span className="muted">{t("clientIccc")}</span><b>{t("clientIcccV")}</b></div>
-          <div className="stat-row"><span className="muted">{t("clientAndroid")}</span><b>{t("clientAndroidV")}</b></div>
-          <div className="stat-row"><span className="muted">{t("clientIphone")}</span><b>{t("clientIphoneV")}</b></div>
-          <div className="stat-row"><span className="muted">CCTV / DVR</span><b>Any JPEG source via /cctv — no our hardware</b></div>
-          <div className="stat-row"><span className="muted">{t("clientMap")}</span><b>{t("clientMapV")}</b></div>
+          <p className="muted" style={{ fontSize: 15, margin: "0 0 10px" }}>{t("fieldBoothSub")}</p>
+          <ol className="booth-how">
+            <li>{t("boothHow1")}</li>
+            <li>{t("boothHow2")}</li>
+            <li>{t("boothHow3")}</li>
+            <li>{t("boothHow4")}</li>
+          </ol>
+          <p className="muted" style={{ fontSize: 14, margin: "0 0 10px" }}>{t("fieldFourPhones")}</p>
           <div className="field-row" style={{ marginTop: 12 }}>
             <button className="btn" type="button" disabled={busy} onClick={arm}>{busy ? "…" : t("fieldArm")}</button>
             <button className="btn ghost" type="button" onClick={copyLink}>{t("fieldCopy")}</button>
-            <Link className="btn ghost" to="/field">{t("fieldOpen")}</Link>
           </div>
           {booth?.code && (
             <p className="mono" style={{ fontSize: 28, letterSpacing: "0.28em", margin: "14px 0 0" }}>{booth.code}</p>
           )}
-          <p className="muted mono" style={{ fontSize: 11, margin: "8px 0 0", wordBreak: "break-all" }}>{joinUrl}</p>
+          <p className="muted" style={{ fontSize: 13, margin: "8px 0 0", wordBreak: "break-all" }}>{joinUrl}</p>
         </div>
         <div className="field-qr-wrap">
           <img src={qrSrc} width={168} height={168} alt={t("fieldQrAlt")} />
-          <span className="muted" style={{ fontSize: 11 }}>{t("fieldQrHint")}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{t("fieldQrHint")}</span>
         </div>
       </div>
     </div>

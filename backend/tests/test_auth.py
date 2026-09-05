@@ -17,6 +17,16 @@ def test_me(client, admin_token):
     assert r.json()["role"] == "ADMIN"
 
 
+def test_iccc_summary_and_buses_load(client, admin_token):
+    headers = auth_header(admin_token)
+    summary = client.get("/analytics/summary", headers=headers)
+    assert summary.status_code == 200, summary.text
+    buses = client.get("/buses", headers=headers)
+    assert buses.status_code == 200, buses.text
+    sensors = client.get("/sensor-nodes", headers=headers)
+    assert sensors.status_code == 200, sensors.text
+
+
 def test_field_join_can_ingest_water_tap(client, admin_token):
     code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
     token = client.post("/auth/field-join", json={"code": code}).json()["access_token"]

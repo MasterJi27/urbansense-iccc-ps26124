@@ -10,7 +10,7 @@ from app.models.event import (
     SourceType,
     UrbanEvent,
 )
-from app.models.fleet import Bus, ProcessingMode, Route, SensorNode, Trip
+from app.models.fleet import Bus, ProcessingMode, Route, SensorNode, Trip, Ward
 from app.models.ops import AuditLog, NotificationLog, SyncLog
 from app.models.user import User, UserRole
 from app.models.work_order import Repair, WorkOrder, WorkOrderStatus
@@ -35,6 +35,7 @@ __all__ = [
     "Route",
     "SensorNode",
     "Trip",
+    "Ward",
     "AuditLog",
     "SyncLog",
     "NotificationLog",

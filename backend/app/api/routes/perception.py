@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.event import EventType
+from app.models.event import EventType, Severity, SourceType
 from app.models.user import User
 from app.schemas.common import ObservationIn
 from app.services.azure_edge import (
@@ -20,15 +17,13 @@ from app.services.azure_edge import (
     read_still,
 )
 from app.services.bbox_severity import severity_from_boxes
+from app.services.composio_notify import composio_status
 from app.services.model_metrics import load_model_metrics
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
 from app.services.ps26124 import apply_camera_bay, coverage_payload
+from app.services.rdd_cloud import detect_rdd, rdd_cloud_status, top_event
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-
-_AI_ROOT = Path(__file__).resolve().parents[4] / "ai"
-if str(_AI_ROOT) not in sys.path:
-    sys.path.insert(0, str(_AI_ROOT))
 
 
 @router.get("/ps26124")
@@ -38,25 +33,18 @@ def ps26124(_: User = Depends(get_current_user)):
 
 @router.get("/capabilities")
 def capabilities(_: User = Depends(get_current_user)):
-    try:
-        from urbansense_ai.pipeline import PerceptionPipeline
-
-        caps = PerceptionPipeline().capabilities()
-        caps["azure_vision"] = azure_vision_status()
-        caps["azure_openai"] = azure_openai_status()
-        caps["azure_content_safety"] = azure_safety_status()
-        caps["azure_stack"] = azure_stack_status()
-        caps["rdd_eval"] = load_model_metrics()
-        return caps
-    except Exception as exc:
-        return {
-            "available": False,
-            "reason": str(exc),
-            "hint": "pip install -r ai/requirements-ai.txt then run python -m urbansense_ai.run_camera",
-            "azure_vision": azure_vision_status(),
-            "azure_openai": azure_openai_status(),
-            "azure_content_safety": azure_safety_status(),
-        }
+    rdd = rdd_cloud_status()
+    return {
+        "available": rdd.get("honesty") == "REAL",
+        "road_damage": rdd,
+        "azure_vision": azure_vision_status(),
+        "azure_openai": azure_openai_status(),
+        "azure_content_safety": azure_safety_status(),
+        "azure_stack": azure_stack_status(),
+        "rdd_eval": load_model_metrics(),
+        "composio": composio_status(),
+        "note": "RDD confirm runs on this App Service from stills. Windshield boxes are on-device preview.",
+    }
 
 
 @router.post("/analyze-frame")
@@ -80,41 +68,61 @@ async def analyze_frame(
         url = save_evidence_bytes(name, data)
     except Exception as exc:
         return {"ok": False, "error": f"evidence store failed: {exc}"}
-    try:
-        import cv2
-        import numpy as np
-        from urbansense_ai.pipeline import FrameContext, PerceptionPipeline
-
-        arr = np.frombuffer(data, dtype=np.uint8)
-        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if frame is None:
-            return {"ok": False, "evidence_url": url, "error": "unreadable image"}
-        pipe = PerceptionPipeline()
-        payloads = pipe.process(frame, FrameContext(latitude=latitude, longitude=longitude, source_id=source_id, source_type=source_type))
-    except Exception as exc:
-        return {"ok": False, "evidence_url": url, "error": str(exc), "capabilities_hint": "/ai/capabilities"}
-
-    results = []
-    for body in payloads:
-        body["evidence_url"] = url
-        extra = dict(body.get("extra") or {})
-        extra["camera_bay"] = (camera_bay or "FRONT").upper()
-        boxes = extra.get("boxes") or extra.get("detections") or body.get("boxes")
-        if boxes:
-            graded = severity_from_boxes(boxes, frame_w=frame.shape[1], frame_h=frame.shape[0])
-            extra["bbox_severity"] = graded
-            extra["bbox_frac"] = graded["bbox_frac"]
-            extra["severity_honesty"] = "RULE_BASED"
-            body["severity"] = graded["severity"].value
-        raw_type = body.get("event_type")
-        if raw_type:
-            typed, note = apply_camera_bay(EventType(raw_type), camera_bay)
-            body["event_type"] = typed.value
-            if note:
-                extra["derivation"] = note
-        body["extra"] = extra
-        obs_in = ObservationIn(**{k: v for k, v in body.items() if k in ObservationIn.model_fields})
-        obs, event, created = ingest_observation(db, obs_in, actor_id=user.id)
-        background.add_task(publish_event, event, created)
-        results.append({"event": event.public_code, "type": event.event_type.value, "created": created, "simulated": obs.simulated})
-    return {"ok": True, "evidence_url": url, "count": len(results), "items": results, "capabilities": pipe.capabilities()}
+    rdd = detect_rdd(data)
+    detections = rdd.get("detections") or []
+    top = top_event(detections)
+    if top is None:
+        return {
+            "ok": True,
+            "evidence_url": url,
+            "count": 0,
+            "items": [],
+            "detections": [],
+            "rdd": rdd,
+            "capabilities": {"road_damage": rdd_cloud_status()},
+        }
+    extra = {
+        "method": "azure-rdd-onnx",
+        "model": rdd.get("model"),
+        "ai_status": "REAL",
+        "engine_status": "REAL",
+        "patrol": True,
+        "camera_bay": (camera_bay or "FRONT").upper(),
+        "rdd": rdd,
+        "detections": detections,
+        "derivation": "Azure-hosted RDD YOLO. Same engine as /ingest/phone/still.",
+    }
+    boxes = [{"x1": d["bbox"][0], "y1": d["bbox"][1], "x2": d["bbox"][2], "y2": d["bbox"][3]} for d in detections if d.get("bbox")]
+    if boxes:
+        graded = severity_from_boxes(boxes, frame_w=1, frame_h=1)
+        extra["bbox_severity"] = {k: (v.value if hasattr(v, "value") else v) for k, v in graded.items()}
+        extra["severity_honesty"] = "RULE_BASED"
+        sev = graded["severity"]
+    else:
+        sev = Severity(top["severity"])
+    typed, note = apply_camera_bay(EventType(top["event_type"]), camera_bay)
+    if note:
+        extra["derivation"] = note
+    obs_in = ObservationIn(
+        event_type=typed,
+        severity=sev,
+        latitude=latitude,
+        longitude=longitude,
+        source_type=SourceType(source_type) if not isinstance(source_type, SourceType) else source_type,
+        source_id=source_id,
+        confidence=float(top["confidence"]),
+        simulated=False,
+        evidence_url=url,
+        extra=extra,
+    )
+    obs, event, created = ingest_observation(db, obs_in, actor_id=user.id)
+    background.add_task(publish_event, event, created)
+    return {
+        "ok": True,
+        "evidence_url": url,
+        "count": 1,
+        "items": [{"event": event.public_code, "type": event.event_type.value, "created": created, "simulated": obs.simulated}],
+        "detections": detections,
+        "rdd": rdd,
+        "capabilities": {"road_damage": rdd_cloud_status()},
+    }

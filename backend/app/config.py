@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
 
-    app_name: str = "UrbanSense"
+    app_name: str = "SadakSaarthi"
     app_env: str = "development"
     secret_key: str = "dev-only-change-me"
     access_token_expire_minutes: int = 720
@@ -51,6 +51,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AZURE_MAPS_SUBSCRIPTION_KEY", "AZURE_MAPS_KEY"),
     )
+    composio_api_key: str = ""
+    composio_notify_to: str = ""
+    composio_notify_channel: str = "gmail"
+    composio_entity_id: str = "default"
 
     @property
     def cors_origin_list(self) -> list[str]:

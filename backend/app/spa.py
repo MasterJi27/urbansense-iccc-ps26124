@@ -15,6 +15,8 @@ _SKIP_PREFIXES = (
     "/openapi.json",
     "/health",
     "/ui/",
+    "/weights/",
+    "/ort/",
     "/evidence/",
     "/maps/",
     "/ws/",

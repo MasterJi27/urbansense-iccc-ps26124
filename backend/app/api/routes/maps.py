@@ -54,7 +54,7 @@ def maps_tile(
         "https://atlas.microsoft.com/map/tile"
         f"?api-version=2.1&tilesetId=microsoft.base.road&zoom={z}&x={x}&y={y}&subscription-key={key}"
     )
-    req = UrlRequest(upstream, headers={"User-Agent": "UrbanSense-ICCC/1.0"})
+    req = UrlRequest(upstream, headers={"User-Agent": "SadakSaarthi-ICCC/1.0"})
     try:
         with urlopen(req, timeout=12) as resp:
             data = resp.read()

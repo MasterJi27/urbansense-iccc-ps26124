@@ -32,9 +32,9 @@ export default function Login() {
   }
   return (
     <div className="login-split login-register">
-      <section className="login-brand" aria-label="UrbanSense">
+      <section className="login-brand" aria-label="SadakSaarthi">
         <div>
-          <div className="folio-brand">URBANSENSE</div>
+          <div className="folio-brand">SADAKSAARTHI</div>
           <div className="folio-brand-sub">ICCC COMMAND REGISTER</div>
           <h1>The ICCC officer&apos;s endorsement register</h1>
           <p>Delhi fleet command. Honest AI labels. Phone-edge, not a Western ITS demo. No video upload. No collapse prediction.</p>

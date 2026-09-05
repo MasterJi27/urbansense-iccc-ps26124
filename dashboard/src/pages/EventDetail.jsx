@@ -95,7 +95,7 @@ export default function EventDetail() {
   return (
     <div className="incident-pack">
       <div className="print-only incident-pack-head">
-        <h1>UrbanSense incident pack</h1>
+        <h1>SadakSaarthi incident pack</h1>
         <p>ASSISTS AUTHORITIES — DOES NOT ACCUSE</p>
         <p>{ev.public_code} · {ev.event_type} · {ev.status}</p>
       </div>

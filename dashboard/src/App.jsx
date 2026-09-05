@@ -3,7 +3,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { getToken, getScope, clearSession, api } from "./api";
 import Login from "./pages/Login.jsx";
 import FieldCamera from "./pages/FieldCamera.jsx";
-import CctvBridge from "./pages/CctvBridge.jsx";
 import CitizenReport from "./pages/CitizenReport.jsx";
 import Events from "./pages/Events.jsx";
 import EventDetail from "./pages/EventDetail.jsx";
@@ -18,7 +17,7 @@ import RoadHealth from "./pages/RoadHealth.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { UiProvider, useUi } from "./i18n.jsx";
 import FolioSheet from "./components/FolioSheet.jsx";
-import { ATLAS_TABS, CAPTURE_TABS, MORE_TABS, NAV_TABS } from "./folioCopy.js";
+import { ATLAS_TABS, MORE_TABS, NAV_TABS } from "./folioCopy.js";
 
 const Overview = lazy(() => import("./pages/Overview.jsx"));
 const LiveMap = lazy(() => import("./pages/LiveMap.jsx"));
@@ -83,9 +82,7 @@ function Shell() {
     if (p.startsWith("/sensors")) return t("sensors");
     if (p.startsWith("/users")) return t("users");
     if (p.startsWith("/settings")) return t("settings");
-    if (p.startsWith("/field")) return t("fieldUnit");
-    if (p.startsWith("/cctv")) return t("cctvUnit");
-    return "UrbanSense";
+    return "SadakSaarthi";
   }, [loc.pathname, t]);
 
   useEffect(() => {
@@ -281,7 +278,6 @@ function Shell() {
 
   const moreTabs = MORE_TABS.filter((tab) => tab.to !== "/users" || role === "ADMIN" || role === "SUPER_ADMIN");
   const deskGroups = [
-    { label: t("captureDesk"), tabs: CAPTURE_TABS },
     { label: t("atlasDesk"), tabs: ATLAS_TABS },
     { label: t("moreDesk"), tabs: moreTabs },
   ];
@@ -290,7 +286,7 @@ function Shell() {
     <div className="register-shell">
       <header className="register-masthead">
         <div className="folio-wordmark">
-          <div className="folio-brand">URBANSENSE</div>
+          <div className="folio-brand">SADAKSAARTHI</div>
           <div className="folio-brand-sub">ICCC COMMAND REGISTER</div>
         </div>
         <nav className="folio-nav" aria-label="Primary">
@@ -452,7 +448,7 @@ export default function App() {
           <Route path="/folio" element={<FolioSheet pathname="/folio" />} />
           <Route path="/login" element={<Login />} />
           <Route path="/field" element={<FieldCamera />} />
-          <Route path="/cctv" element={<CctvBridge />} />
+          <Route path="/cctv" element={<Navigate to="/" replace />} />
           <Route path="/report" element={<CitizenReport />} />
           <Route path="/*" element={<Guard><Shell /></Guard>} />
         </Routes>

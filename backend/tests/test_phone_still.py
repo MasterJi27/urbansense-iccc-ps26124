@@ -14,15 +14,52 @@ def test_phone_still_without_azure_vision(client, admin_token, tmp_path, monkeyp
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("bump.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01", "imu_mag": "1.8"},
+        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01", "imu_mag": "18"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["created_event"] is True
     extra = body["event"]["extra"]
-    assert extra["method"] == "phone-still"
+    assert extra["method"] == "phone-imu-shake"
     assert extra["ai_status"] == "DISABLED"
     assert body["event"]["event_type"] == "POTHOLE"
+
+
+def test_phone_still_projects_pin_ahead(client, admin_token, tmp_path, monkeypatch):
+    monkeypatch.setenv("EVIDENCE_DIR", str(tmp_path))
+    from app.config import get_settings
+    import app.api.routes.ingest as ingest_mod
+
+    get_settings.cache_clear()
+
+    def fake_rdd(_data):
+        return {
+            "ok": True,
+            "detections": [
+                {
+                    "klass": "Pothole",
+                    "class_id": "D40",
+                    "confidence": 0.72,
+                    "bbox": [0.3, 0.4, 0.5, 0.5],
+                    "event_type": "POTHOLE",
+                    "severity": "HIGH",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(ingest_mod, "detect_rdd", fake_rdd)
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("ahead.jpg", JPEG, "image/jpeg")},
+        data={"latitude": "28.63", "longitude": "77.22", "source_id": "FIELD-AHEAD", "heading": "90"},
+    )
+    assert r.status_code == 200, r.text
+    ev = r.json()["event"]
+    assert ev["event_type"] == "POTHOLE"
+    assert ev["longitude"] > 77.22
+    assert ev["extra"]["gps_ahead"]["used"] is True
+    assert ev["extra"]["gps_ahead"]["honesty"] == "RULE_BASED"
 
 
 def test_phone_still_field_iphone_is_not_a_bus_fk(client, admin_token, tmp_path, monkeypatch):
@@ -55,6 +92,23 @@ def test_phone_still_resolves_bus_code(client, admin_token, tmp_path, monkeypatc
     )
     assert r.status_code == 200, r.text
     assert r.json()["observation"]["bus_id"]
+
+
+def test_phone_still_repeat_same_filename(client, admin_token, tmp_path, monkeypatch):
+    monkeypatch.setenv("EVIDENCE_DIR", str(tmp_path))
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    payload = {
+        "headers": auth_header(admin_token),
+        "files": {"file": ("field-still.jpg", JPEG, "image/jpeg")},
+        "data": {"latitude": "28.61", "longitude": "77.21", "source_id": "BUS-017-P1", "bus_id": "BUS-017"},
+    }
+    a = client.post("/ingest/phone/still", **payload)
+    b = client.post("/ingest/phone/still", **payload)
+    assert a.status_code == 200, a.text
+    assert b.status_code == 200, b.text
+    assert a.json()["observation"]["id"] != b.json()["observation"]["id"]
 
 
 def test_phone_still_rejects_empty(client, admin_token):

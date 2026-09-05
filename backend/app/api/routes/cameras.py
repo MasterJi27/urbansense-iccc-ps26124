@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.ingest import _ingest, _vision_observation
 from app.database import get_db
-from app.deps import get_current_user, require_roles
+from app.deps import ROLE_RANK, get_current_user, require_roles
 from app.models.event import SourceType
 from app.models.fleet import Bus, ProcessingMode, SensorNode
 from app.models.user import User, UserRole
@@ -64,7 +64,7 @@ def _node_out(db: Session, node: SensorNode) -> dict:
 @router.get("/presets")
 def camera_presets(_: User = Depends(get_current_user)):
     return {
-        "note": "Any camera that can emit one JPEG. We do not ship a DVR, ONVIF stack, or 24×7 NVR.",
+        "note": "Any camera that can emit one JPEG. Azure does not decode RTSP. Depot 24×7 is scripts/cctv-bridge.ps1 -Loop on the PC next to the DVR, not App Service GPU.",
         "lan_pull": lan_pull_enabled(),
         "items": public_presets(),
     }
@@ -81,7 +81,9 @@ def list_cameras(db: Session = Depends(get_db), _: User = Depends(get_current_us
 
 
 @router.post("")
-def register_camera(body: CameraIn, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN))):
+def register_camera(body: CameraIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if getattr(user, "auth_scope", "iccc") != "field" and ROLE_RANK.get(user.role, 0) < ROLE_RANK[UserRole.INSPECTOR]:
+        raise HTTPException(status_code=403, detail="Insufficient role")
     return _node_out(db, _upsert_node(db, body))
 
 
@@ -120,14 +122,11 @@ async def pull_camera_snapshot(
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     extra = dict(obs.extra or {})
-    extra.update(
-        {
-            "method": "cctv-http-snapshot",
-            "vendor": (body.vendor or "HTTP_SNAPSHOT").upper(),
-            "connector": "any-camera-bridge",
-            "derivation": "HTTP JPEG snapshot from a DVR/ONVIF URL. Not RTSP decode. Password is not stored.",
-        }
-    )
+    extra["vendor"] = (body.vendor or "HTTP_SNAPSHOT").upper()
+    extra["connector"] = "any-camera-bridge"
+    if extra.get("method") != "azure-rdd-onnx":
+        extra["method"] = "cctv-http-snapshot"
+        extra["derivation"] = "HTTP JPEG snapshot from a DVR/ONVIF URL. Not RTSP decode. Password is not stored."
     obs.extra = extra
     node.last_heartbeat_at = datetime.now(timezone.utc)
     db.commit()

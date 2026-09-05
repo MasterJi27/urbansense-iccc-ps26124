@@ -17,7 +17,7 @@ ROAD_TYPES = {
 }
 
 COVERAGE = [
-    {"id": "potholes", "requirement": "Potholes", "status": "REAL", "how": "RDD YOLO on road stills / Azure Vision tags on phone stills"},
+    {"id": "potholes", "requirement": "Potholes", "status": "REAL", "how": "RDD ONNX on Azure App Service for phone/CCTV stills"},
     {"id": "damaged_roads", "requirement": "Damaged roads", "status": "REAL", "how": "Same RDD crack classes → ROAD_DAMAGE"},
     {"id": "missing_dividers", "requirement": "Missing dividers", "status": "RULE_BASED", "how": "GIS asset-watch, not neural absence"},
     {"id": "missing_zebra", "requirement": "Missing zebra crossings", "status": "RULE_BASED", "how": "GIS asset-watch, not neural absence"},
@@ -36,7 +36,7 @@ COVERAGE = [
     {"id": "od", "requirement": "OD patterns + route delays", "status": "SIMULATED", "how": "Seeded trips; empty when no real AVL"},
     {"id": "actions", "requirement": "Actionable insights / work orders", "status": "REAL", "how": "Verify → WO → repair → re-verify"},
     {"id": "edge", "requirement": "Edge-AI + low bandwidth", "status": "REAL", "how": "Onboard stills, ~1KB JSON, no video upload"},
-    {"id": "multicam", "requirement": "Front / rear / side / cabin cameras", "status": "REAL", "how": "Five bays + any-camera still bridge (/cctv). Cabin never scores road defects. Frames, not raw video"},
+    {"id": "multicam", "requirement": "Front / rear / side / cabin cameras", "status": "REAL", "how": "Phone bays FRONT/REAR/LEFT/RIGHT/CABIN. Cabin never scores road defects. Frames, not raw video"},
 ]
 
 
@@ -57,7 +57,7 @@ def coverage_payload() -> dict:
         "problem_statement": "26124",
         "org": "Bharat Electronics Limited",
         "title": "AI-Powered Mobile Urban Intelligence Platform Using Public Transport Fleet",
-        "note": "Edge analyses sampled frames from bus camera bays. Cloud stores alerts, not continuous video.",
+        "note": "Edge analyses sampled frames from bus camera bays. Cloud stores alerts, not continuous video. Defect pin is walked ahead along heading.",
         "counts": counts,
         "items": COVERAGE,
         "camera_bays": list(CAMERA_BAYS),

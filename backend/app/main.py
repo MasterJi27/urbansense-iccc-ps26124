@@ -11,13 +11,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import api_router
 from app.config import get_settings
-from app.database import Base, SessionLocal, enable_postgis, ensure_pg_enum_values, engine
+from app.database import Base, SessionLocal, enable_postgis, ensure_pg_enum_values, ensure_schema_columns, engine
 from app.deps import get_current_user
 from app.models import *  # noqa: F401,F403
 from app.models.user import User
 from app.security import decode_token
 from app.seed import ensure_camera_bays, seed_if_empty
 from app.services.field_acl import field_path_allowed
+from app.services.rdd_cloud import rdd_cloud_status, warmup_rdd
 from app.services.redact import install_redact_filter
 from app.spa import DASHBOARD_DIR, SPA_HEADERS, is_hidden_api_surface, should_serve_spa, spa_index
 
@@ -30,7 +31,7 @@ if settings.secret_key in {"dev-only-change-me", "change-me-to-a-long-random-str
 
 _docs = "/docs" if settings.is_development else None
 app = FastAPI(
-    title="UrbanSense API",
+    title="SadakSaarthi API",
     description="Distributed urban intelligence platform — observations, fusion, assets, work orders.",
     version="0.1.0",
     docs_url=_docs,
@@ -106,6 +107,10 @@ def on_startup():
         database.SessionLocal = SessionLocal
         Base.metadata.create_all(bind=engine)
     ensure_pg_enum_values(engine)
+    try:
+        ensure_schema_columns(engine)
+    except Exception:
+        logging.getLogger("urbansense").exception("schema column migrate skipped")
     # minimal migration: add checklist JSON field to inspections if missing (existing DB)
     try:
         with engine.begin() as conn:
@@ -128,6 +133,10 @@ def on_startup():
             ensure_camera_bays(db)
         finally:
             db.close()
+    try:
+        warmup_rdd()
+    except Exception:
+        logging.getLogger("urbansense").exception("rdd warmup skipped")
 
 
 @app.get("/")
@@ -151,6 +160,7 @@ def health():
         "azure_openai": bool(settings.azure_openai_endpoint.strip()),
         "azure_content_safety": bool(settings.azure_contentsafety_endpoint.strip()),
         "azure_maps": bool(settings.azure_maps_subscription_key.strip()),
+        "rdd": rdd_cloud_status()["honesty"],
     }
 
 
@@ -192,5 +202,8 @@ if DASHBOARD_DIR.is_dir():
         except ValueError:
             return FileResponse(DASHBOARD_DIR / "index.html", headers=SPA_HEADERS)
         if candidate.is_file():
-            return FileResponse(candidate)
+            headers = dict(SPA_HEADERS)
+            if full_path.startswith("weights/") or full_path.startswith("ort/"):
+                headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+            return FileResponse(candidate, headers=headers)
         return FileResponse(DASHBOARD_DIR / "index.html", headers=SPA_HEADERS)

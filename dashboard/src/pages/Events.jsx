@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, getToken, wsUrl } from "../api";
+import { api, getToken } from "../api";
 import HonestyChip from "../components/HonestyChip.jsx";
 import { useUi } from "../i18n.jsx";
 import DemoTruth from "../components/DemoTruth.jsx";
 import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
+import { mergeEventRow, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 export default function Events() {
   const { t, monsoon, setMonsoon, vru, setVru } = useUi();
   const [rows, setRows] = useState([]);
   const [citizenOpen, setCitizenOpen] = useState(false);
-  const [citizenType, setCitizenType] = useState("WATERLOGGING");
+  const [citizenType, setCitizenType] = useState("ROAD_OBSTRUCTION");
   const [citizenNote, setCitizenNote] = useState("");
   const [citizenBusy, setCitizenBusy] = useState(false);
   const [q, setQ] = useState("");
@@ -22,19 +23,24 @@ export default function Events() {
   const [retryKey, setRetryKey] = useState(0);
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
-  const [hideSeed, setHideSeed] = useState(false);
+  const [hideSeed, setHideSeed] = useState(true);
   useEffect(() => {
     setErr("");
     api("/events?limit=300").then(setRows).catch((e) => setErr(e.message || "Failed to load events"));
     const token = getToken();
-    const ws = new WebSocket(wsUrl("/ws/events", token));
-    ws.onmessage = (m) => {
+    const stopWs = openAuthedSocket("/ws/events", token, (m) => {
       try {
         const msg = JSON.parse(m.data);
-        if (msg.event) setRows((prev) => [msg.event, ...prev.filter((x) => x.id !== msg.event.id)].slice(0, 300));
+        if (msg.event) setRows((prev) => mergeEventRow(prev, msg.event, 300));
       } catch { /* ignore bad frames */ }
+    });
+    const stopPoll = pollJson("/events?limit=300", (e) => {
+      if (Array.isArray(e)) setRows(e);
+    }, 2000);
+    return () => {
+      stopWs();
+      stopPoll();
     };
-    return () => ws.close();
   }, [retryKey]);
 
   const filtered = useMemo(()=>{
@@ -43,6 +49,7 @@ export default function Events() {
     if(sev!=="ALL") r=r.filter(e=>e.severity===sev);
     if(status!=="ALL") r=r.filter(e=>e.status===status);
     if(typeF!=="ALL") r=r.filter(e=>e.event_type===typeF);
+    r = r.filter((e) => e.event_type !== "WATERLOGGING");
     if (hideSeed) r = r.filter((e) => !dualHonesty(e).seed);
     if (vru || monsoon) r = r.filter((e) => (vru && isVru(e)) || (monsoon && isMonsoon(e)));
     if(sort==="score") r.sort((a,b)=>b.confidence-a.confidence);
@@ -226,7 +233,6 @@ export default function Events() {
           <p className="muted" style={{fontSize:12,margin:"0 0 8px"}}>{t("citizenHint")}</p>
           <div className="filters">
             <select aria-label="Report type" value={citizenType} onChange={(e) => setCitizenType(e.target.value)}>
-              <option value="WATERLOGGING">WATERLOGGING (SIMULATED model)</option>
               <option value="ROAD_OBSTRUCTION">ROAD_OBSTRUCTION</option>
               <option value="PEDESTRIAN_RISK">PEDESTRIAN_RISK</option>
             </select>
