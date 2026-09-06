@@ -173,9 +173,26 @@ def save_evidence_blob(filename: str, data: bytes) -> str | None:
     name = f"{datetime.now(timezone.utc).strftime('%Y%m%d')}/{uuid.uuid4().hex}-{filename}"
     client = BlobServiceClient(account_url=url.rstrip("/"), credential=_credential())
     blob = client.get_blob_client(settings.azure_storage_container, name)
-    content = ContentSettings(content_type="image/jpeg")
+    content = ContentSettings(content_type=_blob_content_type(filename))
     blob.upload_blob(data, overwrite=True, content_settings=content)
     return blob.url
+
+
+def _blob_content_type(filename: str) -> str:
+    lower = (filename or "").lower()
+    if lower.endswith(".webm"):
+        return "video/webm"
+    if lower.endswith(".mp4"):
+        return "video/mp4"
+    if lower.endswith(".png"):
+        return "image/png"
+    return "image/jpeg"
+
+
+def looks_like_video(data: bytes) -> bool:
+    if len(data) >= 4 and data[:4] == b"\x1a\x45\xdf\xa3":
+        return True
+    return b"ftyp" in data[:32]
 
 
 def analyze_still(data: bytes) -> dict:

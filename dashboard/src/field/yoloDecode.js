@@ -142,9 +142,10 @@ function decodePacked(table, meta, { conf, classFilter, classMap }) {
   return dets.slice(0, 20);
 }
 
-export function cropBand(imageData, y0frac) {
+export function cropBand(imageData, y0frac, y1frac = 1) {
   const y0 = Math.max(0, Math.min(imageData.height - 1, Math.floor(imageData.height * y0frac)));
-  const h = Math.max(1, imageData.height - y0);
+  const y1 = Math.max(y0 + 1, Math.min(imageData.height, Math.round(imageData.height * y1frac)));
+  const h = Math.max(1, y1 - y0);
   const src = new OffscreenCanvas(imageData.width, imageData.height);
   src.getContext("2d").putImageData(imageData, 0, 0);
   const dst = new OffscreenCanvas(imageData.width, h);
@@ -152,8 +153,8 @@ export function cropBand(imageData, y0frac) {
   return dst.getContext("2d").getImageData(0, 0, imageData.width, h);
 }
 
-export function remapRoi(dets, y0frac) {
-  const span = Math.max(0.05, 1 - y0frac);
+export function remapRoi(dets, y0frac, y1frac = 1) {
+  const span = Math.max(0.05, y1frac - y0frac);
   return (dets || []).map((d) => {
     const box = d.bbox || [];
     if (box.length < 4) return d;

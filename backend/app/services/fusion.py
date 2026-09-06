@@ -75,10 +75,13 @@ class SpatialTemporalFusionEngine(FusionEngine):
             ts = ts.replace(tzinfo=timezone.utc)
 
         candidates = _nearby_events(db, observation.latitude, observation.longitude)
+        obs_kind = _payload_kind(observation.extra, observation.simulated)
 
         best: UrbanEvent | None = None
         best_d: float | None = None
         for ev in candidates:
+            if _kinds_clash(obs_kind, _payload_kind(ev.extra, ev.simulated)):
+                continue
             types = COMPATIBLE.get(observation.event_type, {observation.event_type})
             if settings.fusion_compatible_only and ev.event_type not in types:
                 continue
@@ -190,12 +193,18 @@ def _attach(db: Session, event: UrbanEvent, obs: Observation, distance_m: float)
         event.evidence_url = obs.evidence_url
     if human and event.status == EventStatus.UNVERIFIED:
         event.status = EventStatus.CONFIRMED
-    event.simulated = event.simulated or obs.simulated
+    kinds = {((o.extra or {}).get("payload_kind")) for o in observations}
+    has_field = "FIELD" in kinds
+    if has_field:
+        event.simulated = False
+    else:
+        event.simulated = event.simulated or obs.simulated
     _maybe_reopen_after_resense(db, event, obs)
     _stamp_patrol(event, observations, incoming=obs)
     extra = dict(event.extra or {})
-    kinds = {((o.extra or {}).get("payload_kind")) for o in observations}
-    if "SEED" in kinds or event.simulated:
+    if has_field:
+        extra["payload_kind"] = "FIELD"
+    elif "SEED" in kinds or event.simulated:
         extra.setdefault("payload_kind", "SEED")
         extra.setdefault("ai_status", "SIMULATED")
     engines = [((o.extra or {}).get("engine_status")) for o in observations if (o.extra or {}).get("engine_status")]
@@ -333,6 +342,19 @@ def _awaiting_repair_audit(db: Session, event: UrbanEvent) -> bool:
 
 def _event_ref_ts(event: UrbanEvent) -> datetime:
     return max(_aware(event.timestamp), _aware(getattr(event, "updated_at", None)))
+
+
+def _payload_kind(extra: dict | None, simulated: bool) -> str | None:
+    kind = str((extra or {}).get("payload_kind") or "").upper()
+    if kind in {"FIELD", "SEED"}:
+        return kind
+    if simulated:
+        return "SEED"
+    return None
+
+
+def _kinds_clash(obs_kind: str | None, event_kind: str | None) -> bool:
+    return {obs_kind, event_kind} == {"FIELD", "SEED"}
 
 
 def _nearby_events(db: Session, lat: float, lon: float, *extra_where):

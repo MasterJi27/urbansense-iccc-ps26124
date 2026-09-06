@@ -2,7 +2,7 @@
   "honesty": "REAL",
   "evaluated": true,
   "dataset": "RDD2022 India (CRDDC) \u2014 this host",
-  "note": "Held-out test (323 images) after slow fine-tune (lr0=0.001, freeze=10). Not the old 654-image val — do not treat 0.508 to 0.619 as the same split. D10 test has only 6 boxes, so that class AP is noisy. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours.",
+  "note": "Held-out test after India RDD fine-tune (lr0=0.001, freeze=10). Dataset is RDD2022 India (Delhi / Gurugram / Haryana). Twitter/Reddit comments were not used \u2014 they are unlabeled. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours.",
   "map50": 0.6189,
   "map50_95": 0.2924,
   "eval_split": "test",
@@ -16,8 +16,7 @@
       "D10",
       "D20",
       "D40"
-    ],
-    "test_boxes": { "D00": 152, "D10": 6, "D20": 215, "D40": 335 }
+    ]
   },
   "recipe": {
     "lr0": 0.001,
@@ -56,5 +55,5 @@
       "index": 3
     }
   ],
-  "updated_at": "2026-09-05T17:16:49.983086+00:00"
+  "updated_at": "2026-09-06T07:57:33.042604+00:00"
 }

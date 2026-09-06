@@ -12,6 +12,19 @@ from app.models.user import User, UserRole
 from app.realtime.hub import hub
 from app.schemas.common import BusIn, HeartbeatIn, SensorBindIn, TripIn
 from app.services.fusion import record_clear_passes
+from app.services.refs import ensure_bus
+
+
+_IMU_WIRE = ("imu_mag", "imu_ax", "imu_ay", "imu_az", "gyro_z", "gps_accuracy", "gps_ok")
+
+
+def _live_telemetry(src) -> dict:
+    def _get(key):
+        if isinstance(src, dict):
+            return src.get(key)
+        return getattr(src, key, None)
+
+    return {key: _get(key) for key in _IMU_WIRE}
 
 
 def _clip_live_boxes(rows: list | None) -> list[dict]:
@@ -181,10 +194,14 @@ def heartbeat(
         node = SensorNode(code=body.sensor_code or f"NODE-{datetime.now(timezone.utc).strftime('%H%M%S')}")
         db.add(node)
         db.flush()
+    bus_code = None
     if body.bus_code:
-        bus = db.query(Bus).filter(Bus.code == body.bus_code).first()
-        if bus:
+        try:
+            bus = ensure_bus(db, body.bus_code)
             node.bus_id = bus.id
+            bus_code = bus.code
+        except ValueError:
+            bus_code = None
     node.camera_status = body.camera_status
     node.gps_status = body.gps_status
     node.imu_status = body.imu_status
@@ -194,8 +211,10 @@ def heartbeat(
     node.network_type = body.network_type
     node.ai_mode = body.ai_mode
     node.sync_state = body.sync_state
-    node.latitude = body.latitude
-    node.longitude = body.longitude
+    if body.latitude is not None:
+        node.latitude = body.latitude
+    if body.longitude is not None:
+        node.longitude = body.longitude
     node.heading = body.heading
     node.speed_kmh = body.speed_kmh
     node.last_heartbeat_at = datetime.now(timezone.utc)
@@ -219,22 +238,23 @@ def heartbeat(
         bay = "FRONT"
     elif "REAR" in label:
         bay = "REAR"
-    source_id = body.bus_code or node.code
+    source_id = bus_code or body.bus_code or node.code
     clear = record_clear_passes(
         db,
-        latitude=body.latitude,
-        longitude=body.longitude,
+        latitude=body.latitude if body.latitude is not None else node.latitude,
+        longitude=body.longitude if body.longitude is not None else node.longitude,
         source_id=source_id,
         heading=body.heading,
         camera_bay=bay,
         source_type=SourceType.PHONE,
     )
     db.commit()
+    telemetry = _live_telemetry(body)
     live = {
         "type": "live.heartbeat",
         "sensor_id": node.id,
         "sensor_code": node.code,
-        "bus_code": body.bus_code,
+        "bus_code": bus_code or body.bus_code,
         "latitude": node.latitude,
         "longitude": node.longitude,
         "heading": node.heading,
@@ -245,13 +265,19 @@ def heartbeat(
         "overlay_backend": body.overlay_backend,
         "infer_ms": body.infer_ms,
         "ai_mode": node.ai_mode,
+        **telemetry,
     }
     background.add_task(hub.broadcast, live, "live")
     return {
         "ok": True,
         "sensor_id": node.id,
+        "sensor_code": node.code,
+        "bus_code": bus_code or body.bus_code,
         "last_heartbeat_at": node.last_heartbeat_at,
         "clear_passes": clear,
+        "latitude": node.latitude,
+        "longitude": node.longitude,
+        **telemetry,
     }
 
 

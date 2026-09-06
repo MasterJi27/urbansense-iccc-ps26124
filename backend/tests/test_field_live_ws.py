@@ -14,7 +14,7 @@ def test_field_live_ws_rejects_iccc(client, admin_token):
 
 
 def test_field_live_ws_broadcasts_to_iccc(client, admin_token):
-    code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
+    code = client.post("/auth/field-booth", json={"bus_code": "BUS-017"}, headers=auth_header(admin_token)).json()["code"]
     field = client.post("/auth/field-join", json={"code": code}).json()["access_token"]
     with client.websocket_connect(f"/ws/live?token={admin_token}") as desk:
         with client.websocket_connect(f"/ws/field-live?token={field}") as phone:
@@ -29,6 +29,13 @@ def test_field_live_ws_broadcasts_to_iccc(client, admin_token):
                         "overlay_mode": "ondevice",
                         "overlay_backend": "webgpu",
                         "infer_ms": 42,
+                        "imu_mag": 1.2,
+                        "imu_ax": 0.05,
+                        "imu_ay": -0.1,
+                        "imu_az": 9.7,
+                        "gyro_z": 0.02,
+                        "gps_accuracy": 6.5,
+                        "gps_ok": True,
                         "last_boxes": [
                             {
                                 "klass": "Pothole",
@@ -51,3 +58,7 @@ def test_field_live_ws_broadcasts_to_iccc(client, admin_token):
     assert msg["overlay_backend"] == "webgpu"
     assert msg["infer_ms"] == 42
     assert msg["person_count"] == 1
+    assert msg["imu_mag"] == 1.2
+    assert msg["imu_az"] == 9.7
+    assert msg["gps_ok"] is True
+    assert msg["gps_accuracy"] == 6.5

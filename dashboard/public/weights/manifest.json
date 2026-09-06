@@ -27,9 +27,9 @@
     ]
   },
   "person": {
-    "file": "coco_person.onnx",
+    "file": null,
     "imgsz": 320,
-    "honesty": "REAL COCO person on this frame. Not a child detector.",
-    "enabled": true
+    "honesty": "Person detector is disabled on the field overlay. Road RDD only.",
+    "enabled": false
   }
 }

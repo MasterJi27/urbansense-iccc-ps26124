@@ -22,7 +22,19 @@ def test_phone_still_without_azure_vision(client, admin_token, tmp_path, monkeyp
     extra = body["event"]["extra"]
     assert extra["method"] == "phone-imu-shake"
     assert extra["ai_status"] == "DISABLED"
+    assert extra["payload_kind"] == "FIELD"
     assert body["event"]["event_type"] == "POTHOLE"
+
+
+def test_phone_still_requires_gps(client, admin_token):
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("bump.jpg", JPEG, "image/jpeg")},
+        data={"source_id": "NODE-PHONE-01"},
+    )
+    assert r.status_code == 400
+    assert "GPS fix required" in r.text
 
 
 def test_phone_still_projects_pin_ahead(client, admin_token, tmp_path, monkeypatch):
@@ -60,6 +72,7 @@ def test_phone_still_projects_pin_ahead(client, admin_token, tmp_path, monkeypat
     assert ev["longitude"] > 77.22
     assert ev["extra"]["gps_ahead"]["used"] is True
     assert ev["extra"]["gps_ahead"]["honesty"] == "RULE_BASED"
+    assert isinstance(ev["extra"].get("azure_still_ms"), int)
 
 
 def test_phone_still_field_iphone_is_not_a_bus_fk(client, admin_token, tmp_path, monkeypatch):
@@ -212,3 +225,30 @@ def test_phone_still_maps_mocked_vision(client, admin_token, tmp_path, monkeypat
     assert ev["event_type"] == "ROAD_DAMAGE"
     assert ev["extra"]["caption"] == "a cracked road"
     assert ev["extra"]["method"] == "azure-ai-vision"
+
+
+WEBM = b"\x1a\x45\xdf\xa3" + b"\x00" * 48
+
+
+def test_phone_still_keeps_live_clip(client, admin_token, tmp_path, monkeypatch):
+    monkeypatch.setenv("EVIDENCE_DIR", str(tmp_path))
+    from app.config import get_settings
+    import app.api.routes.ingest as ingest_mod
+
+    get_settings.cache_clear()
+    monkeypatch.setattr(ingest_mod, "detect_rdd", lambda _d: {"ok": True, "detections": []})
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={
+            "file": ("bump.jpg", JPEG, "image/jpeg"),
+            "clip": ("live.webm", WEBM, "video/webm"),
+        },
+        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-CLIP-01"},
+    )
+    assert r.status_code == 200, r.text
+    extra = r.json()["event"]["extra"]
+    assert extra["live_photo"] is True
+    assert extra["live_photo_url"]
+    assert extra["scan_parallel"] is True
+    assert extra.get("place") is not None

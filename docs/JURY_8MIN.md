@@ -4,6 +4,13 @@ Live: https://app-urbansense-yngmbk.azurewebsites.net/
 
 **USP:** Independent-Bus Confirmation Ledger. Fleet confirms. One bus cannot.
 
+## Phone check (2 min, before the 8-min walk)
+
+1. Phone Chrome/Safari: https://app-urbansense-yngmbk.azurewebsites.net/field
+2. PIN + bus + allow camera and GPS. Leave **AUTO — on detect** (not 1 s burst).
+3. Point at a pothole/crack (or a printed photo). Ticket should appear on ICCC without tapping FILE REPORT.
+4. Settings → About: pedestrian overlay is **DISABLED**. Cloud RDD is **REAL**.
+
 ## Login
 
 1. Open the live URL.

@@ -15,7 +15,7 @@ export function updateTracks(tracks, dets, now = Date.now()) {
   const sorted = [...(tracks || [])].sort((a, b) => (b.hits || 0) - (a.hits || 0));
   for (const tr of sorted) {
     let best = -1;
-    let bestIou = 0.28;
+    let bestIou = 0.16;
     (dets || []).forEach((d, i) => {
       if (used.has(i)) return;
       if ((d.event_type || d.class_id) !== (tr.event_type || tr.class_id)) return;
@@ -26,7 +26,7 @@ export function updateTracks(tracks, dets, now = Date.now()) {
       }
     });
     if (best < 0) {
-      if (now - tr.updated < 700) next.push(tr);
+      if (now - tr.updated < 900) next.push(tr);
       continue;
     }
     used.add(best);

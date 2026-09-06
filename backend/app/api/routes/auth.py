@@ -4,16 +4,24 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user, require_iccc, require_roles
 from app.models.user import User, UserRole
-from app.schemas.common import FieldBoothOut, FieldJoinIn, LoginIn, MeOut, RegisterIn, TokenOut, UserOut
+from app.schemas.common import FieldBoothIn, FieldBoothOut, FieldJoinIn, LoginIn, MeOut, RegisterIn, TokenOut, UserOut
 from app.security import create_access_token, hash_password, verify_password
-from app.services.field_booth import current_booth, issue_booth, redeem_booth
+from app.services.field_booth import MAX_JOINS, current_booth, issue_booth, redeem_booth
 from app.services.rate_limit import client_ip, enforce, gate
+from app.services.refs import ensure_bus, normalize_bus_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _booth_out(booth) -> FieldBoothOut:
-    return FieldBoothOut(code=booth.code, expires_in=booth.expires_in, redeemed=booth.redeemed)
+    return FieldBoothOut(
+        code=booth.code,
+        expires_in=booth.expires_in,
+        redeemed=booth.redeemed,
+        bus_code=booth.bus_code,
+        joins=booth.joins,
+        max_joins=getattr(booth, "max_joins", MAX_JOINS),
+    )
 
 
 @router.post("/login", response_model=TokenOut)
@@ -64,8 +72,14 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/field-booth", response_model=FieldBoothOut)
-def open_field_booth(user: User = Depends(require_iccc)):
-    booth = issue_booth(user_id=user.id, role=user.role.value, full_name=user.full_name)
+def open_field_booth(body: FieldBoothIn, db: Session = Depends(get_db), user: User = Depends(require_iccc)):
+    try:
+        bus_code = normalize_bus_code(body.bus_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ensure_bus(db, bus_code)
+    db.commit()
+    booth = issue_booth(user_id=user.id, role=user.role.value, full_name=user.full_name, bus_code=bus_code)
     return _booth_out(booth)
 
 
@@ -98,4 +112,5 @@ def join_field_booth(body: FieldJoinIn, request: Request, db: Session = Depends(
         user_id=user.id,
         full_name=user.full_name,
         scope="field",
+        bus_code=booth.bus_code,
     )

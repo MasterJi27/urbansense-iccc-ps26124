@@ -20,14 +20,14 @@ def test_login_token_is_iccc_scope(client, admin_token):
 
 
 def test_field_token_cannot_open_settings(client, admin_token):
-    code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
+    code = client.post("/auth/field-booth", json={"bus_code": "BUS-017"}, headers=auth_header(admin_token)).json()["code"]
     token = client.post("/auth/field-join", json={"code": code}).json()["access_token"]
     r = client.get("/settings", headers=auth_header(token))
     assert r.status_code == 403
 
 
 def test_field_token_cannot_list_events(client, admin_token):
-    code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
+    code = client.post("/auth/field-booth", json={"bus_code": "BUS-017"}, headers=auth_header(admin_token)).json()["code"]
     token = client.post("/auth/field-join", json={"code": code}).json()["access_token"]
     r = client.get("/events", headers=auth_header(token))
     assert r.status_code == 403

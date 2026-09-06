@@ -1,15 +1,10 @@
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Skeleton } from "../components/Skeleton.jsx";
-import Empty from "../components/Empty.jsx";
 import HonestyChip from "../components/HonestyChip.jsx";
 import { useUi } from "../i18n.jsx";
 import { edgeModeFromProcessing } from "../honesty.js";
-
-function Pill({status}){
-  const cls = status==="REAL"?"tag real": status==="RULE_BASED"?"tag rule": status==="DISABLED"?"tag off": status==="EXPERIMENTAL"||status==="SIMULATED"?"tag sim":"tag info";
-  return <span className={cls} style={{fontSize:11,fontWeight:700}}>{status}</span>;
-}
 
 export default function Settings(){
   const { t } = useUi();
@@ -56,11 +51,9 @@ export default function Settings(){
         <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Tiny UI change? Run <span className="mono">scripts/ship-ui.ps1</span>. Full <span className="mono">azd up</span> is only for infra. Last UI deploy is minutes, not an hour.</p>
       </div>
 
-      <div className="usp-strip is-confirmed" role="status" style={{ marginBottom: 12 }}>
-        <div className="usp-strip-kicker">{t("uspKicker")}</div>
-        <p className="usp-strip-line">{t("uspLine")}</p>
-        <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>One bus opens an UNVERIFIED first sighting. A different bus on the same 40 m / 6 h cluster is the only automatic confirm. Three later buses that do not re-sense expire a rumour. Two later buses after repair are the auditor.</p>
-      </div>
+      <p className="muted" style={{ fontSize: 13, margin: "0 0 12px" }}>
+        Honesty tables and PS 26124 coverage live on <Link to="/about">{t("about")}</Link>.
+      </p>
 
       <div className="card" style={{ marginBottom: 12 }}>
         <h4>RDD eval <HonestyChip status={s.rdd_eval?.honesty || "EXPERIMENTAL"} compact /></h4>
@@ -117,20 +110,6 @@ export default function Settings(){
             </div>
           );
         })}
-      </div>
-
-      <div className="card">
-        <h4>AI engines — every payload carries ai_status <span className="tag info" style={{fontSize:11}}>{ai ? Object.keys(ai).length : 0} engines</span></h4>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,marginTop:10}}>
-          {ai ? Object.entries(ai).filter(([,v])=>v && typeof v==="object" && !Array.isArray(v) && (v.ai_status||v.honesty||v.status)).sort(([,a],[,b])=>{ const order={REAL:0,RULE_BASED:1,EXPERIMENTAL:2,SIMULATED:3,DISABLED:4}; const sa=a?.ai_status||a?.honesty||a?.status||"SIMULATED"; const sb=b?.ai_status||b?.honesty||b?.status||"SIMULATED"; return (order[sa]??99)-(order[sb]??99); }).map(([k,v])=>(
-            <div key={k} style={{border:"1px solid var(--line)",borderRadius:12,padding:"10px 12px",background:"var(--surface-2)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><b style={{fontSize:12}}>{k}</b><Pill status={v?.ai_status||v?.honesty||v?.status||"SIMULATED"} /></div>
-              <div className="mono muted" style={{fontSize:11,marginTop:6,wordBreak:"break-all"}}>{v?.model||v?.note||JSON.stringify(v).slice(0,120)}</div>
-              {v?.limitation && <div className="muted" style={{fontSize:11,marginTop:4}}>{v.limitation}</div>}
-            </div>
-          )) : <Empty icon="⚙" title="No AI capabilities" description="AI engine status will appear here" />}
-        </div>
-        <p className="muted" style={{fontSize:11,marginTop:10}}>REAL = neural forward pass executed • RULE_BASED = deterministic on real signals • EXPERIMENTAL = runs but not trustworthy (speed uncalibrated, Turkish signs disabled) • SIMULATED = mock/demo.</p>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>

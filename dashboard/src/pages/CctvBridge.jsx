@@ -349,7 +349,6 @@ export default function CctvBridge() {
             {overlay.mode === "ondevice" ? t("fieldOnDevice") : overlay.mode === "cloud" ? t("fieldCloudPreview") : t("fieldWait")}
           </span>
         )}
-        {mode === "LENS" && <span className="tag info">{t("fieldPeople")} {overlay.personCount}</span>}
       </div>
 
       <p className="muted" style={{ fontSize: 15 }}>{t("cctvWifiWhy")}</p>

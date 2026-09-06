@@ -119,6 +119,19 @@ def main() -> int:
     parser.add_argument("--eval-only", action="store_true", help="Val existing weights; do not train")
     parser.add_argument("--lr0", type=float, default=0.001)
     parser.add_argument("--freeze", type=int, default=10)
+    parser.add_argument("--patience", type=int, default=25)
+    parser.add_argument("--close-mosaic", type=int, default=15)
+    parser.add_argument("--name", default="india_best")
+    parser.add_argument(
+        "--phone-aug",
+        action="store_true",
+        help="Stronger HSV/mixup. Do not use on a converged India checkpoint.",
+    )
+    parser.add_argument(
+        "--note-extra",
+        default="",
+        help="Appended to metrics.json note (Hugging Face mix, extra countries, …).",
+    )
     args = parser.parse_args()
     if not args.data and INDIA_YAML.is_file():
         args.data = str(INDIA_YAML)
@@ -131,33 +144,50 @@ def main() -> int:
         return skip("ultralytics is not installed. pip install ultralytics in the training env.")
 
     device = args.device or ("0" if _cuda() else "cpu")
+    prev_map = None
+    if METRICS.is_file():
+        try:
+            prev_map = json.loads(METRICS.read_text(encoding="utf-8")).get("map50")
+        except (OSError, json.JSONDecodeError, TypeError, AttributeError):
+            prev_map = None
     model = YOLO(args.model)
     best = Path(args.model)
-    if not args.eval_only:
-        results = model.train(
-            data=str(data),
-            epochs=args.epochs,
-            imgsz=args.imgsz,
-            device=device,
-            batch=8,
-            workers=2,
-            patience=20,
-            lr0=args.lr0,
-            lrf=0.01,
-            freeze=args.freeze,
-            copy_paste=0.2,
-            close_mosaic=15,
-            project=str(OUT_DIR / "runs"),
-            name="india_v2",
-            exist_ok=True,
+    train_kw: dict = {
+        "data": str(data),
+        "epochs": args.epochs,
+        "imgsz": args.imgsz,
+        "device": device,
+        "batch": 8,
+        "workers": 2,
+        "patience": args.patience,
+        "lr0": args.lr0,
+        "lrf": 0.01,
+        "freeze": args.freeze,
+        "copy_paste": 0.2,
+        "close_mosaic": args.close_mosaic,
+        "project": str(OUT_DIR / "runs"),
+        "name": args.name,
+        "exist_ok": False,
+    }
+    if args.phone_aug:
+        train_kw.update(
+            hsv_h=0.015,
+            hsv_s=0.5,
+            hsv_v=0.4,
+            degrees=4.0,
+            translate=0.05,
+            scale=0.15,
+            mixup=0.05,
+            erasing=0.15,
         )
-        save_dir = Path(getattr(results, "save_dir", OUT_DIR / "runs" / "india_v2"))
+    if not args.eval_only:
+        results = model.train(**train_kw)
+        save_dir = Path(getattr(results, "save_dir", OUT_DIR / "runs" / args.name))
         best = save_dir / "weights" / "best.pt"
-        if best.is_file():
-            INDIA_BEST.write_bytes(best.read_bytes())
-            print(f"copied {INDIA_BEST}")
-    elif INDIA_BEST.is_file():
+    elif INDIA_BEST.is_file() and not Path(args.model).is_file():
         best = INDIA_BEST
+    if best.is_file():
+        model = YOLO(str(best))
     split_name = _eval_split(data)
     metrics: dict = {}
     try:
@@ -170,6 +200,18 @@ def main() -> int:
         per = _per_class(box)
     except Exception as exc:
         return skip(f"Training finished but val failed: {exc}")
+    new_map = metrics.get("map50") or 0
+    floor = float(prev_map) if isinstance(prev_map, (int, float)) else 0.0
+    promoted = bool(best.is_file() and new_map + 1e-6 >= floor)
+    if promoted:
+        INDIA_BEST.write_bytes(best.read_bytes())
+        print(f"promoted {best} map50={new_map} (floor {floor}) -> {INDIA_BEST}")
+    else:
+        print(
+            f"kept previous India weights. new map50={new_map} did not beat floor {floor}",
+            file=sys.stderr,
+        )
+        return 0
 
     classes = []
     for i, row in enumerate(CLASS_MAP):
@@ -185,9 +227,12 @@ def main() -> int:
             "evaluated": bool(metrics.get("map50")),
             "dataset": "RDD2022 India (CRDDC) — this host",
             "note": (
-                f"Held-out {split_name} after slow fine-tune (lr0={args.lr0}, freeze={args.freeze}). "
+                f"Held-out {split_name} after India RDD fine-tune (lr0={args.lr0}, freeze={args.freeze}). "
+                "Dataset is RDD2022 India (Delhi / Gurugram / Haryana). "
+                "Twitter/Reddit comments were not used — they are unlabeled. "
                 "Not a certified field accuracy. Waterlogging and Indian signs were not trained. "
                 "Do not quote a rival mAP as ours."
+                + (f" {args.note_extra.strip()}" if args.note_extra.strip() else "")
             ),
             "map50": metrics.get("map50"),
             "map50_95": metrics.get("map50_95"),

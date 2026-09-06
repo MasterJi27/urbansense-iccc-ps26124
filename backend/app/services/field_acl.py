@@ -5,6 +5,7 @@ from __future__ import annotations
 FIELD_EXACT = {
     ("GET", "/auth/me"),
     ("GET", "/maps/config"),
+    ("GET", "/maps/place"),
     ("GET", "/health"),
     ("POST", "/ingest/phone"),
     ("POST", "/ingest/phone/still"),

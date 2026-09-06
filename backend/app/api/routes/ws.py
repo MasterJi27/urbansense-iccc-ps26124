@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
-from app.api.routes.fleet import _clip_live_boxes
+from app.api.routes.fleet import _clip_live_boxes, _live_telemetry
 from app.realtime.hub import hub
 from app.security import decode_token
 
@@ -79,6 +79,7 @@ async def field_live_ws(ws: WebSocket, token: str = Query(default="")):
                 "infer_ms": infer_ms,
                 "ai_mode": msg.get("ai_mode"),
                 "camera_status": "ONLINE",
+                **_live_telemetry(msg),
             }
             await hub.broadcast(live, "live")
     except WebSocketDisconnect:

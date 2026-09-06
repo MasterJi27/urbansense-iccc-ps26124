@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     composio_notify_to: str = ""
     composio_notify_channel: str = "gmail"
     composio_entity_id: str = "default"
+    composio_connected_account_id: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

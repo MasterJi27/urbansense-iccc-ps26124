@@ -17,6 +17,11 @@ def test_ps26124_coverage(client, admin_token):
     assert body["counts"]["SIMULATED"] >= 1
     assert "FRONT" in body["camera_bays"]
     assert "CABIN" in body["camera_bays"]
+    vehicles = next(row for row in body["items"] if row["id"] == "vehicles")
+    assert vehicles["status"] == "RULE_BASED"
+    assert "Azure Vision" in vehicles["how"]
+    vru = next(row for row in body["items"] if row["id"] == "vru")
+    assert "person net is off" in vru["how"]
 
 
 def test_cabin_still_does_not_become_pothole(client, admin_token):

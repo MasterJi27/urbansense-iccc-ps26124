@@ -12,7 +12,9 @@ let backend = "wasm";
 let manifest = { rdd: { imgsz: 640 }, person: { enabled: false, imgsz: 320 } };
 let ready = false;
 let tick = 0;
-const ROAD_Y0 = 0.32;
+const ROAD_Y0 = 0.12;
+const FAR_Y0 = 0.06;
+const FAR_Y1 = 0.48;
 
 async function openSession(url) {
   try {
@@ -60,6 +62,17 @@ async function boot() {
   });
 }
 
+function liftContrast(imageData) {
+  const d = imageData.data;
+  const c = 1.12;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = Math.max(0, Math.min(255, (d[i] - 128) * c + 128));
+    d[i + 1] = Math.max(0, Math.min(255, (d[i + 1] - 128) * c + 128));
+    d[i + 2] = Math.max(0, Math.min(255, (d[i + 2] - 128) * c + 128));
+  }
+  return imageData;
+}
+
 function imageDataFromBitmap(bitmap, maxEdge) {
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -68,7 +81,7 @@ function imageDataFromBitmap(bitmap, maxEdge) {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
-  return ctx.getImageData(0, 0, w, h);
+  return liftContrast(ctx.getImageData(0, 0, w, h));
 }
 
 async function runSession(sess, imageData, imgsz) {
@@ -102,9 +115,9 @@ async function runSession(sess, imageData, imgsz) {
   return { table: [], meta: boxed };
 }
 
-function decodeRdd(raw) {
+function decodeRdd(raw, conf = 0.18) {
   return decodeYolo(raw.table, raw.meta, {
-    conf: 0.22,
+    conf,
     classMap: (idx) => mapRdd(idx),
   });
 }
@@ -122,20 +135,23 @@ self.onmessage = async (ev) => {
   if (msg.type !== "frame" || !ready || !rddSess) return;
   const t0 = performance.now();
   try {
-    const imageData = imageDataFromBitmap(msg.bitmap, 960);
+    const maxEdge = backend === "webgpu" ? 800 : 640;
+    const imageData = imageDataFromBitmap(msg.bitmap, maxEdge);
     const rddImgsz = manifest.rdd?.imgsz || 640;
     const road = cropBand(imageData, ROAD_Y0);
     const roadRaw = await runSession(rddSess, road, rddImgsz);
-    const roadDets = remapRoi(decodeRdd(roadRaw), ROAD_Y0);
+    const roadDets = remapRoi(decodeRdd(roadRaw, 0.18), ROAD_Y0);
     let detections = roadDets;
     tick += 1;
-    const fullEvery = backend === "webgpu" ? 2 : 4;
-    if (tick % fullEvery === 1) {
-      const fullRaw = await runSession(rddSess, imageData, rddImgsz);
-      detections = mergeDets([roadDets, decodeRdd(fullRaw)]);
+    const farEvery = backend === "webgpu" ? 1 : 3;
+    if (tick % farEvery === 0) {
+      const far = cropBand(imageData, FAR_Y0, FAR_Y1);
+      const farRaw = await runSession(rddSess, far, rddImgsz);
+      const farDets = remapRoi(decodeRdd(farRaw, 0.14), FAR_Y0, FAR_Y1);
+      detections = mergeDets([roadDets, farDets]);
     }
     let people = [];
-    if (personSess && tick % 2 === 0) {
+    if (personSess && tick % (backend === "webgpu" ? 2 : 3) === 0) {
       const personImgsz = manifest.person?.imgsz || 320;
       const ped = await runSession(personSess, imageData, personImgsz);
       people = decodeYolo(ped.table, ped.meta, {

@@ -23,7 +23,7 @@ def test_presets_list_vendors(client, admin_token):
 
 
 def test_field_token_can_register_camera(client, admin_token):
-    code = client.post("/auth/field-booth", headers=auth_header(admin_token)).json()["code"]
+    code = client.post("/auth/field-booth", json={"bus_code": "BUS-017"}, headers=auth_header(admin_token)).json()["code"]
     token = client.post("/auth/field-join", json={"code": code}).json()["access_token"]
     r = client.post(
         "/cameras",

@@ -23,6 +23,7 @@ const Overview = lazy(() => import("./pages/Overview.jsx"));
 const LiveMap = lazy(() => import("./pages/LiveMap.jsx"));
 const Analytics = lazy(() => import("./pages/Analytics.jsx"));
 const BridgeHealth = lazy(() => import("./pages/BridgeHealth.jsx"));
+const About = lazy(() => import("./pages/About.jsx"));
 
 function Guard({ children }) {
   const loc = useLocation();
@@ -80,6 +81,7 @@ function Shell() {
     if (p.startsWith("/work-orders")) return t("workOrders");
     if (p.startsWith("/analytics")) return t("analytics");
     if (p.startsWith("/sensors")) return t("sensors");
+    if (p.startsWith("/about")) return t("about");
     if (p.startsWith("/users")) return t("users");
     if (p.startsWith("/settings")) return t("settings");
     return "SadakSaarthi";
@@ -429,6 +431,7 @@ function Shell() {
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/sensors" element={<Sensors />} />
+              <Route path="/about" element={<About />} />
               <Route path="/users" element={<Users />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

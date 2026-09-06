@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { CircleMarker } from "react-leaflet";
 import { api } from "../api";
 import { useToast } from "../components/Toast.jsx";
@@ -30,6 +30,7 @@ function stillUrl(ev) {
 export default function EventDetail() {
   const { id } = useParams();
   const { t } = useUi();
+  const nav = useNavigate();
   const [ev, setEv] = useState(null);
   const [ledger, setLedger] = useState(null);
   const [err, setErr] = useState("");
@@ -57,6 +58,15 @@ export default function EventDetail() {
       await api("/work-orders", { method: "POST", body: JSON.stringify({ event_id: ev.id, title: `Repair ${ev.event_type} — ${ev.public_code}` }) });
       toast.success("Work order created");
       load();
+    } catch (e) {
+      toast.error(e.message);
+    }
+  }
+  async function deleteTicket() {
+    try {
+      await api(`/events/${ev.id}`, { method: "DELETE" });
+      toast.success("Deleted");
+      nav("/events");
     } catch (e) {
       toast.error(e.message);
     }
@@ -136,7 +146,7 @@ export default function EventDetail() {
             ["Public code", ev.public_code],
             ["GPS", `${fmtCoord(ev.latitude)}, ${fmtCoord(ev.longitude)}`],
             ["Time", ev.timestamp ? new Date(ev.timestamp).toLocaleString() : ""],
-            ["Zone", `${locn.zone} · ${locn.ward}`],
+            ["Zone", extra.place?.label || `${locn.zone} · ${locn.ward}`],
             ["Source", ev.source_id],
             ["Camera bay", extra.camera_bay],
             ["Method", extra.method],
@@ -222,7 +232,7 @@ export default function EventDetail() {
           {still ? (
             <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 12 }}>
               <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}><h4 style={{ margin: 0 }}>Field still</h4></div>
-              <EvidenceStill url={still} alt={`${ev.public_code} still`} />
+              <EvidenceStill url={still} liveUrl={extra.live_photo_url || ""} alt={`${ev.public_code} still`} />
             </div>
           ) : null}
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -243,6 +253,7 @@ export default function EventDetail() {
         <button className="btn ghost" onClick={() => act(`/events/${ev.id}/reject`, { notes: "false_positive" })}>Log as false positive</button>
         <button className="btn ghost" onClick={() => act(`/events/${ev.id}/brief`)}>Draft Azure OpenAI brief</button>
         <button className="btn ghost" onClick={createWo}>{t("createWo")}</button>
+        <button className="btn ghost" onClick={deleteTicket}>{t("deleteEvent")}</button>
       </div>
     </div>
   );

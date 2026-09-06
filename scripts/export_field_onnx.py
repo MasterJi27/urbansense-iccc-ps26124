@@ -1,4 +1,4 @@
-"""Export windshield ONNX (RDD 320 + COCO person). Falls back to the cloud 640 RDD file."""
+"""Export windshield RDD ONNX. Person net stays off on /field."""
 
 from __future__ import annotations
 
@@ -12,14 +12,9 @@ RDD_PT = [
     ROOT / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
     ROOT / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
 ]
-PERSON_PT = [
-    ROOT / "weights" / "yolo26n.pt",
-    ROOT / "weights" / "yolov8n.pt",
-]
 CLOUD_RDD = ROOT / "backend" / "app" / "weights" / "rdd_india.onnx"
 DEST_DIR = ROOT / "dashboard" / "public" / "weights"
 RDD_WEB = DEST_DIR / "rdd_web.onnx"
-PERSON_WEB = DEST_DIR / "coco_person.onnx"
 MANIFEST = DEST_DIR / "manifest.json"
 
 RDD_CLASSES = [
@@ -58,11 +53,6 @@ def main() -> int:
         print("no RDD weights to publish", file=sys.stderr)
         return 2
 
-    person_ok = False
-    ppt = next((p for p in PERSON_PT if p.is_file() and p.stat().st_size > 100_000), None)
-    if ppt:
-        person_ok = _export(ppt, PERSON_WEB, 320)
-
     manifest = {
         "rdd": {
             "file": "rdd_web.onnx",
@@ -71,10 +61,10 @@ def main() -> int:
             "classes": RDD_CLASSES,
         },
         "person": {
-            "file": "coco_person.onnx" if person_ok else None,
+            "file": None,
             "imgsz": 320,
-            "honesty": "REAL COCO person on this frame. Not a child detector.",
-            "enabled": person_ok,
+            "honesty": "Person detector is disabled on the field overlay. Road RDD only.",
+            "enabled": False,
         },
     }
     MANIFEST.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

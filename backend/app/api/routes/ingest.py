@@ -1,5 +1,7 @@
 """Unified ingestion gateway. Future CCTV/IoT devices post the same Observation model."""
 
+from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -16,10 +18,12 @@ from app.services.azure_edge import (
     StillRejected,
     analyze_still,
     azure_stack_status,
+    looks_like_video,
     read_still,
     screen_still,
     validate_still,
 )
+from app.services.place import reverse_place
 from app.services.bbox_severity import severity_from_boxes
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
 from app.services.ahead_gps import project_ahead
@@ -28,6 +32,16 @@ from app.services.ps26124 import apply_camera_bay
 from app.services.rdd_cloud import detect_rdd, rdd_cloud_status, top_event
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+_STILL_POOL = ThreadPoolExecutor(max_workers=3)
+CLIP_MAX_BYTES = 4_000_000
+
+
+def _safe_analyze_still(data: bytes) -> dict:
+    try:
+        return analyze_still(data)
+    except Exception as exc:
+        return {"ok": False, "ai_status": "DISABLED", "reason": str(exc)}
+
 
 
 async def _ingest(body: ObservationIn, source: SourceType, db: Session, user: User, background: BackgroundTasks):
@@ -69,7 +83,7 @@ def edge_status(_: User = Depends(get_current_user)):
     return azure_stack_status()
 
 
-def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accuracy, source_id, bus_id, heading, speed_kmh, imu_mag, camera_bay: str = "FRONT", source_type: SourceType = SourceType.PHONE):
+def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accuracy, source_id, bus_id, heading, speed_kmh, imu_mag, camera_bay: str = "FRONT", source_type: SourceType = SourceType.PHONE, live_photo_url: str | None = None):
     validate_still(data)
     try:
         safety = screen_still(data)
@@ -78,13 +92,16 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
     if not safety.get("ok"):
         raise HTTPException(status_code=400, detail={"reason": "content_safety_blocked", "categories": safety.get("blocked")})
     url = save_evidence_bytes(name, data)
-    rdd = detect_rdd(data)
+    t0 = perf_counter()
+    rdd_f = _STILL_POOL.submit(detect_rdd, data)
+    vis_f = _STILL_POOL.submit(_safe_analyze_still, data)
+    place_f = _STILL_POOL.submit(reverse_place, latitude, longitude)
+    rdd = rdd_f.result(timeout=60)
+    vision = vis_f.result(timeout=60)
+    place = place_f.result(timeout=20)
+    still_ms = int(round((perf_counter() - t0) * 1000))
     detections = rdd.get("detections") or []
     top = top_event(detections)
-    try:
-        vision = analyze_still(data)
-    except Exception as exc:
-        vision = {"ok": False, "ai_status": "DISABLED", "reason": str(exc)}
 
     mapped = vision.get("mapped_event_type") if vision.get("ok") else None
     bay = (camera_bay or "FRONT").upper()
@@ -129,6 +146,7 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
         )
     event_type, bay_note = apply_camera_bay(event_type, bay)
     extra: dict = {
+        "payload_kind": "FIELD",
         "method": method,
         "model": model,
         "provider": provider,
@@ -145,6 +163,12 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
         "camera_bay": bay,
         "derivation": derivation,
         "gps_ahead": ahead,
+        "place": place,
+        "live_photo_url": live_photo_url,
+        "live_photo": bool(live_photo_url),
+        "scan_parallel": True,
+        "azure_still_ms": still_ms,
+        "rdd_infer_ms": rdd.get("infer_ms"),
     }
     if event_type == EventType.WATERLOGGING:
         extra["derivation"] = (
@@ -206,8 +230,8 @@ async def probe_phone_still(
 async def ingest_phone_still(
     background: BackgroundTasks,
     file: UploadFile = File(...),
-    latitude: float = Form(28.6328),
-    longitude: float = Form(77.2195),
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
     gps_accuracy: float | None = Form(None),
     source_id: str = Form("NODE-PHONE-01"),
     bus_id: str | None = Form(None),
@@ -215,14 +239,22 @@ async def ingest_phone_still(
     speed_kmh: float | None = Form(None),
     imu_mag: float | None = Form(None),
     camera_bay: str = Form("FRONT"),
+    clip: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if latitude is None or longitude is None:
+        raise HTTPException(status_code=400, detail="GPS fix required")
     try:
         data = await read_still(file)
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "phone-still.jpg"
+    live_photo_url = None
+    if clip is not None:
+        raw = await clip.read(CLIP_MAX_BYTES + 1)
+        if raw and len(raw) <= CLIP_MAX_BYTES and looks_like_video(raw):
+            live_photo_url = save_evidence_bytes(clip.filename or "live.webm", raw)
     try:
         body, _vision, _safety, _url = _vision_observation(
             data,
@@ -237,6 +269,7 @@ async def ingest_phone_still(
             imu_mag=imu_mag,
             camera_bay=camera_bay,
             source_type=SourceType.PHONE,
+            live_photo_url=live_photo_url,
         )
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

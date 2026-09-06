@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { cadenceSpec, isPatrol, shouldSend } from "./cadence.js";
 import { updateTracks } from "./track.js";
 
-const INGEST_GAP_MS = 800;
 const CLOUD_TICK_MS = 900;
 
 export function useFieldOverlay({
   authed,
+  cadence,
   patrol,
   videoRef,
   blobFromVideo,
@@ -14,17 +15,21 @@ export function useFieldOverlay({
   setBoxes,
   setResult,
   onError,
+  onPulse,
 }) {
   const [mode, setMode] = useState("idle");
   const [personCount, setPersonCount] = useState(0);
   const [overlayFps, setOverlayFps] = useState(0);
   const [backend, setBackend] = useState("wasm");
   const [inferMs, setInferMs] = useState(0);
+  const [burstLeftMs, setBurstLeftMs] = useState(0);
   const blobRef = useRef(blobFromVideo);
   const postRef = useRef(postStill);
   const boxesRef = useRef(setBoxes);
   const resultRef = useRef(setResult);
   const errorRef = useRef(onError);
+  const pulseRef = useRef(onPulse);
+  const cadenceRef = useRef(cadence);
   const lastIngest = useRef(0);
   const lastBoxesRef = useRef([]);
   const lastPeopleRef = useRef([]);
@@ -33,37 +38,67 @@ export function useFieldOverlay({
   const fpsRef = useRef(0);
   const backendRef = useRef("wasm");
   const inferMsRef = useRef(0);
+  const hadRoadRef = useRef(false);
+  const burstUntilRef = useRef(0);
+  const ingestingRef = useRef(false);
 
   blobRef.current = blobFromVideo;
   postRef.current = postStill;
   boxesRef.current = setBoxes;
   resultRef.current = setResult;
   errorRef.current = onError;
+  pulseRef.current = onPulse;
+  cadenceRef.current = cadence || (patrol === false ? "manual" : "detect");
 
   function noteIngest(ingested, found, prefix) {
     const ev = ingested.event || {};
+    const extra = ev.extra || {};
     resultRef.current({
       path: ingested.observation?.extra?.ai_status || "REAL",
       title: ev.public_code,
       type: ev.event_type,
       created: ingested.created_event,
-      patrol: ev.extra?.patrol_state,
+      patrol: extra.patrol_state,
       eventId: ev.id,
-      note: `${prefix} · ${found[0]?.klass || ev.event_type}`,
+      live: Boolean(extra.live_photo_url),
+      azureMs: extra.azure_still_ms || extra.rdd_infer_ms,
+      note: `${prefix} · ${found[0]?.klass || ev.event_type}${extra.azure_still_ms ? ` · Azure ${extra.azure_still_ms} ms` : ""}`,
       raw: ingested,
     });
   }
 
-  function maybeIngest(found, jpegPromise, prefix) {
-    if (!found.length) return;
-    if (Date.now() - lastIngest.current <= INGEST_GAP_MS) return;
+  function fireIngest(found, jpegPromise, prefix) {
+    if (ingestingRef.current) return;
+    ingestingRef.current = true;
     lastIngest.current = Date.now();
     jpegPromise()
       .then((jpeg) => postRef.current(jpeg))
       .then((ingested) => noteIngest(ingested, found, prefix))
       .catch((ex) => {
-        if (typeof errorRef.current === "function") errorRef.current(ex.message || "Still ingest failed");
+        const msg = ex.message || "Still ingest failed";
+        if (msg === "Allow location") return;
+        if (typeof errorRef.current === "function") errorRef.current(msg);
+      })
+      .finally(() => {
+        ingestingRef.current = false;
       });
+  }
+
+  function considerIngest(roads, jpegPromise, prefix) {
+    const now = Date.now();
+    const hasRoad = roads.length > 0;
+    const decision = shouldSend({
+      cadence: cadenceRef.current,
+      now,
+      lastSend: lastIngest.current,
+      hasRoad,
+      hadRoad: hadRoadRef.current,
+      burstUntil: burstUntilRef.current,
+    });
+    burstUntilRef.current = decision.burstUntil;
+    setBurstLeftMs(Math.max(0, decision.burstUntil - now));
+    hadRoadRef.current = hasRoad;
+    if (decision.send) fireIngest(roads, jpegPromise, prefix);
   }
 
   function paintTracked(rdd, people) {
@@ -75,17 +110,23 @@ export function useFieldOverlay({
     lastPeopleRef.current = peds;
     setPersonCount(peds.length);
     boxesRef.current(tracked);
+    if (typeof pulseRef.current === "function") {
+      pulseRef.current({ roads, people: peds, inferMs: inferMsRef.current });
+    }
     return roads;
   }
 
+  const overlayOn = authed && cadenceSpec(cadence || (patrol === false ? "manual" : "detect")).overlay;
+
   useEffect(() => {
-    if (!authed || !patrol) {
+    if (!overlayOn) {
       setMode("idle");
       tracksRef.current = [];
       lastBoxesRef.current = [];
       lastPeopleRef.current = [];
       boxesRef.current([]);
       setPersonCount(0);
+      setBurstLeftMs(0);
       return undefined;
     }
     let dead = false;
@@ -143,8 +184,8 @@ export function useFieldOverlay({
       fpsTimes.current = fpsTimes.current.filter((t) => now - t < 1000);
       setOverlayFps(fpsTimes.current.length);
       fpsRef.current = fpsTimes.current.length;
-      paintTracked(rdd, people);
-      maybeIngest(rdd, () => blobRef.current(), "Auto still · Azure RDD confirm");
+      const roads = paintTracked(rdd, people);
+      considerIngest(roads, () => blobRef.current(), "AUTO · Azure ticket + clip");
     };
 
     worker.postMessage({ type: "init" });
@@ -178,10 +219,10 @@ export function useFieldOverlay({
       window.cancelAnimationFrame(raf);
       worker.terminate();
     };
-  }, [authed, patrol, videoRef]);
+  }, [overlayOn, videoRef]);
 
   useEffect(() => {
-    if (!authed || !patrol || mode !== "cloud") return undefined;
+    if (!overlayOn || mode !== "cloud") return undefined;
     let dead = false;
     let probing = false;
     const tick = window.setInterval(async () => {
@@ -194,8 +235,8 @@ export function useFieldOverlay({
         const probed = await api("/ingest/phone/probe", { method: "POST", body: fd });
         if (dead) return;
         const found = probed.detections || [];
-        paintTracked(found, []);
-        maybeIngest(found, async () => jpeg, "CLOUD PREVIEW · Azure RDD");
+        const roads = paintTracked(found, []);
+        considerIngest(roads, async () => jpeg, "AUTO · cloud preview");
       } catch {
         /* lens not ready */
       } finally {
@@ -206,7 +247,15 @@ export function useFieldOverlay({
       dead = true;
       window.clearInterval(tick);
     };
-  }, [authed, patrol, mode]);
+  }, [overlayOn, mode]);
+
+  useEffect(() => {
+    if (!isPatrol(cadence || (patrol === false ? "manual" : "detect"))) {
+      burstUntilRef.current = 0;
+      hadRoadRef.current = false;
+      setBurstLeftMs(0);
+    }
+  }, [cadence]);
 
   return {
     mode,
@@ -214,6 +263,7 @@ export function useFieldOverlay({
     overlayFps,
     backend,
     inferMs,
+    burstLeftMs,
     lastBoxes: lastBoxesRef,
     lastPeople: lastPeopleRef,
     fpsRef,

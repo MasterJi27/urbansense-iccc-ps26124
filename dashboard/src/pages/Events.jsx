@@ -3,9 +3,8 @@ import { Link } from "react-router-dom";
 import { api, getToken } from "../api";
 import HonestyChip from "../components/HonestyChip.jsx";
 import { useUi } from "../i18n.jsx";
-import DemoTruth from "../components/DemoTruth.jsx";
 import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
-import { mergeEventRow, openAuthedSocket, pollJson } from "../live/deskLive.js";
+import { applyEventMessage, mergeEventPoll, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 export default function Events() {
   const { t, monsoon, setMonsoon, vru, setVru } = useUi();
@@ -20,28 +19,32 @@ export default function Events() {
   const [typeF, setTypeF] = useState("ALL");
   const [sort, setSort] = useState("recent");
   const [err, setErr] = useState("");
+  const [opErr, setOpErr] = useState("");
   const [retryKey, setRetryKey] = useState(0);
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [hideSeed, setHideSeed] = useState(true);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearTyped, setClearTyped] = useState("");
   useEffect(() => {
     setErr("");
-    api("/events?limit=300").then(setRows).catch((e) => setErr(e.message || "Failed to load events"));
+    const path = hideSeed ? "/events?live=1&limit=300" : "/events?limit=300";
+    api(path).then(setRows).catch((e) => setErr(e.message || "Failed to load events"));
     const token = getToken();
     const stopWs = openAuthedSocket("/ws/events", token, (m) => {
       try {
         const msg = JSON.parse(m.data);
-        if (msg.event) setRows((prev) => mergeEventRow(prev, msg.event, 300));
+        setRows((prev) => applyEventMessage(prev, msg, 300, hideSeed));
       } catch { /* ignore bad frames */ }
     });
-    const stopPoll = pollJson("/events?limit=300", (e) => {
-      if (Array.isArray(e)) setRows(e);
-    }, 2000);
+    const stopPoll = pollJson(path, (e) => {
+      if (Array.isArray(e)) setRows((prev) => mergeEventPoll(prev, e, 300));
+    }, 800);
     return () => {
       stopWs();
       stopPoll();
     };
-  }, [retryKey]);
+  }, [retryKey, hideSeed]);
 
   const filtered = useMemo(()=>{
     let r=[...rows];
@@ -121,16 +124,58 @@ export default function Events() {
   async function bulk(kind) {
     if (selected.size === 0 || busy) return;
     setBusy(true);
-    setErr("");
+    setOpErr("");
     const ids = [...selected];
     try {
-      for (const id of ids) {
-        await api(`/events/${id}/${kind}`, { method: "POST", body: JSON.stringify(kind === "verify" ? { notes: "confirmed (bulk)" } : { notes: "rejected (bulk)" }) });
+      if (kind === "delete") {
+        await api("/events/batch-delete", { method: "POST", body: JSON.stringify({ ids }) });
+        setRows((prev) => prev.filter((e) => !selected.has(String(e.id))));
+      } else {
+        for (const id of ids) {
+          await api(`/events/${id}/${kind}`, { method: "POST", body: JSON.stringify(kind === "verify" ? { notes: "confirmed (bulk)" } : { notes: "rejected (bulk)" }) });
+        }
       }
       setSelected(new Set());
       setRetryKey((k) => k + 1);
     } catch (e) {
-      setErr(e.message || `Bulk ${kind} failed`);
+      setOpErr(e.message || `Bulk ${kind} failed`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteOne(id) {
+    if (busy) return;
+    setBusy(true);
+    setOpErr("");
+    try {
+      await api(`/events/${id}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((e) => e.id !== id));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(String(id));
+        return next;
+      });
+    } catch (e) {
+      setOpErr(e.message || "Delete failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearAll() {
+    if (busy || clearTyped.trim().toUpperCase() !== "CLEAR") return;
+    setBusy(true);
+    setOpErr("");
+    try {
+      await api("/events/clear", { method: "POST", body: JSON.stringify({ confirm: true }) });
+      setRows([]);
+      setSelected(new Set());
+      setClearOpen(false);
+      setClearTyped("");
+      setRetryKey((k) => k + 1);
+    } catch (e) {
+      setOpErr(e.message || "Clear failed");
     } finally {
       setBusy(false);
     }
@@ -183,10 +228,10 @@ export default function Events() {
           <span className="chip live"><span className="table-num">{rows.filter(r=>r.observation_count>1).length}</span>&nbsp;fused</span>
           <button className={`chip ${hideSeed?"active":""}`} onClick={()=>setHideSeed((v)=>!v)} aria-pressed={hideSeed}>Hide SEED rows</button>
           <button className="btn ghost" onClick={() => setCitizenOpen((v) => !v)} aria-pressed={citizenOpen}>{t("citizenStill")}</button>
+          <button className="btn ghost" onClick={() => { setClearOpen((v) => !v); setClearTyped(""); }} aria-pressed={clearOpen}>{t("clearAllEvents")}</button>
           <button className="btn ghost" onClick={exportCsv} title="Export filtered rows as CSV">{t("exportCsv")}</button>
         </div>
       </div>
-      <DemoTruth events={rows} />
 
       <div className="table-wrap">
         <div className="table-toolbar">
@@ -196,17 +241,19 @@ export default function Events() {
           <select aria-label="Type filter" value={typeF} onChange={e=>setTypeF(e.target.value)}><option value="ALL">{t("allTypes")}</option>{types.map((tp)=><option key={tp} value={tp}>{tp}</option>)}</select>
           <select aria-label="Sort events" value={sort} onChange={e=>setSort(e.target.value)}><option value="recent">{t("recent")}</option><option value="score">{t("byScore")}</option><option value="obs">{t("byObs")}</option></select>
         </div>
+        {opErr && <div className="err" role="alert" style={{margin:"8px 0"}}>{opErr}</div>}
         {selected.size > 0 && (
           <div className="table-toolbar" role="status" aria-live="polite" style={{gap:8,alignItems:"center"}}>
             <b className="table-num">{selected.size} selected</b>
             <button className="btn" disabled={busy} onClick={() => bulk("verify")}>{busy ? "Working…" : "Verify"}</button>
             <button className="btn ghost" disabled={busy} onClick={() => bulk("reject")}>{busy ? "Working…" : "Reject"}</button>
+            <button className="btn ghost" disabled={busy} onClick={() => bulk("delete")}>{busy ? "Working…" : t("deleteSelected")}</button>
             <button className="btn ghost" disabled={busy} onClick={clearSelection}>Clear</button>
           </div>
         )}
         <div style={{overflow:"auto",maxHeight:"62vh"}}>
           <table>
-            <thead><tr><th style={{width:32}}><input type="checkbox" aria-label="Select all events" checked={allSelected} onChange={toggleAll} /></th><th className="sticky-first" style={{position:"sticky",left:0,background:"var(--surface-2)",zIndex:2}}>{t("code")}</th><th>{t("type")}</th><th>{t("honesty")}</th><th>{t("severity")}</th><th>{t("status")}</th><th>{t("obs")}</th><th>{t("sources")}</th><th>{t("score")}</th><th>{t("updated")}</th></tr></thead>
+            <thead><tr><th style={{width:32}}><input type="checkbox" aria-label="Select all events" checked={allSelected} onChange={toggleAll} /></th><th className="sticky-first" style={{position:"sticky",left:0,background:"var(--surface-2)",zIndex:2}}>{t("code")}</th><th>{t("type")}</th><th>{t("honesty")}</th><th>{t("severity")}</th><th>{t("status")}</th><th>{t("obs")}</th><th>{t("sources")}</th><th>{t("score")}</th><th>{t("updated")}</th><th></th></tr></thead>
             <tbody>
               {filtered.map((e)=>(
                 <tr key={e.id}>
@@ -220,6 +267,7 @@ export default function Events() {
                   <td className="table-num">{e.source_count ?? "—"}</td>
                   <td className="table-num">{e.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : "—"}</td>
                   <td className="muted" style={{fontSize:12}}>{e.updated_at?.slice(0,16)?.replace("T"," ") || "—"}</td>
+                  <td><button className="btn ghost" style={{padding:"4px 8px",fontSize:12}} disabled={busy} onClick={() => deleteOne(e.id)} aria-label={`Delete ${e.public_code}`}>{t("deleteEvent")}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -227,6 +275,16 @@ export default function Events() {
           {filtered.length===0 && <div className="empty">No events match. Try clearing filters.</div>}
         </div>
       </div>
+      {clearOpen && (
+        <div className="card" style={{marginTop:12}}>
+          <h4>{t("clearAllEvents")}</h4>
+          <p className="muted" style={{fontSize:12,margin:"0 0 8px"}}>{t("clearConfirmHint")}</p>
+          <div className="filters">
+            <input placeholder={t("clearConfirmPh")} aria-label={t("clearConfirmPh")} value={clearTyped} onChange={(e) => setClearTyped(e.target.value)} autoComplete="off" />
+            <button className="btn" disabled={busy || clearTyped.trim().toUpperCase() !== "CLEAR"} onClick={clearAll}>{busy ? "…" : t("clearAllEvents")}</button>
+          </div>
+        </div>
+      )}
       {citizenOpen && (
         <div className="card" style={{marginTop:12}}>
           <h4>{t("citizenStill")}</h4>
@@ -242,7 +300,7 @@ export default function Events() {
         </div>
       )}
       {monsoon && <div className="ops-banner warn" style={{marginTop:12}}><div><b>{t("monsoon")}</b>Waterlogging is a citizen/inspector workflow — never claimed as neural detection.</div></div>}
-      <p className="muted" style={{fontSize:12,marginTop:8}}>Evidence score = max(confidence) + diversity bonuses — not statistical certainty. See Event Detail → Fusion for exact formula.</p>
+      <p className="muted" style={{fontSize:12,marginTop:8}}>Officer delete is ICCC-only. Overlay boxes stay on the phone; this list is Azure tickets. SEED returns only if the process reseeds an empty database.</p>
     </div>
   );
 }

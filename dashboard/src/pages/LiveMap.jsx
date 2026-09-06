@@ -8,7 +8,7 @@ import HonestyChip from "../components/HonestyChip.jsx";
 import LiveFeed from "../components/LiveFeed.jsx";
 import { useUi } from "../i18n.jsx";
 import { dualHonesty, isMonsoon, isVru } from "../honesty.js";
-import { mergeEventRow, mergeLiveSensor, openAuthedSocket, pollJson } from "../live/deskLive.js";
+import { applyEventMessage, mergeEventPoll, mergeLiveSensor, mergeSensorPoll, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 const color = { CRITICAL: "#e5484d", HIGH: "#ef7a18", MEDIUM: "#b7790f", LOW: "#0bb98a" };
 const rank = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
@@ -55,7 +55,7 @@ export default function LiveMap() {
   const [show, setShow] = useState({ sensors: true, assets: true, segments: true });
 
   useEffect(() => {
-    Promise.all([api("/events?limit=200"), api("/sensor-nodes"), api("/assets"), api("/road-health")])
+    Promise.all([api("/events?live=1&limit=200"), api("/sensor-nodes"), api("/assets"), api("/road-health")])
       .then(([e, s, a, r]) => { setEvents(e); setSensors(s); setAssets(a); setSegs(r); })
       .catch((ex) => setErr(ex.message));
     const token = getToken();
@@ -68,34 +68,15 @@ export default function LiveMap() {
     const stopEvents = openAuthedSocket("/ws/events", token, (m) => {
       try {
         const msg = JSON.parse(m.data);
-        if (msg.event) setEvents((prev) => mergeEventRow(prev, msg.event, 200));
+        setEvents((prev) => applyEventMessage(prev, msg, 200, true));
       } catch { /* ignore */ }
     });
     const stopSensorPoll = pollJson("/sensor-nodes", (s) => {
-      if (Array.isArray(s)) {
-        setSensors((prev) => {
-          const live = Array.isArray(prev) ? prev : [];
-          const byCode = new Map(live.map((row) => [row.code || row.id, row]));
-          for (const row of s) {
-            const key = row.code || row.id;
-            const had = byCode.get(key) || {};
-            byCode.set(key, {
-              ...row,
-              last_boxes: (row.last_boxes && row.last_boxes.length) ? row.last_boxes : (had.last_boxes || []),
-              overlay_mode: row.overlay_mode || had.overlay_mode,
-              overlay_backend: row.overlay_backend || had.overlay_backend,
-              overlay_fps: row.overlay_fps || had.overlay_fps,
-              infer_ms: row.infer_ms || had.infer_ms,
-              seen_at: had.seen_at || (row.last_heartbeat_at ? Date.parse(row.last_heartbeat_at) : 0),
-            });
-          }
-          return [...byCode.values()];
-        });
-      }
-    }, 1000);
-    const stopEventPoll = pollJson("/events?limit=200", (e) => {
-      if (Array.isArray(e)) setEvents(e);
-    }, 2000);
+      if (Array.isArray(s)) setSensors((prev) => mergeSensorPoll(prev, s));
+    }, 600);
+    const stopEventPoll = pollJson("/events?live=1&limit=200", (e) => {
+      if (Array.isArray(e)) setEvents((prev) => mergeEventPoll(prev, e, 200));
+    }, 800);
     return () => {
       stopLive();
       stopEvents();

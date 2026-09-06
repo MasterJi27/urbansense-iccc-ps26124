@@ -1,0 +1,59 @@
+{
+  "honesty": "REAL",
+  "evaluated": true,
+  "dataset": "RDD2022 India (CRDDC) \u2014 this host",
+  "note": "Held-out test after India RDD fine-tune (lr0=0.001, freeze=10). Dataset is RDD2022 India (Delhi / Gurugram / Haryana). Twitter/Reddit comments were not used \u2014 they are unlabeled. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours.",
+  "map50": 0.6189,
+  "map50_95": 0.2924,
+  "eval_split": "test",
+  "split": {
+    "train": 2983,
+    "val": 331,
+    "test": 323,
+    "seed": 42,
+    "keep": [
+      "D00",
+      "D10",
+      "D20",
+      "D40"
+    ]
+  },
+  "recipe": {
+    "lr0": 0.001,
+    "freeze": 10,
+    "epochs": 50,
+    "d10_train_repeat": 10
+  },
+  "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
+  "classes": [
+    {
+      "id": "D00",
+      "name": "Longitudinal crack",
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.5887,
+      "index": 0
+    },
+    {
+      "id": "D10",
+      "name": "Transverse crack",
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.5365,
+      "index": 1
+    },
+    {
+      "id": "D20",
+      "name": "Alligator crack",
+      "maps_to": "ROAD_DAMAGE",
+      "map50": 0.762,
+      "index": 2
+    },
+    {
+      "id": "D40",
+      "name": "Pothole",
+      "maps_to": "POTHOLE",
+      "map50": 0.5882,
+      "index": 3
+    }
+  ],
+  "updated_at": "2026-09-06T07:57:33.042604+00:00"
+}

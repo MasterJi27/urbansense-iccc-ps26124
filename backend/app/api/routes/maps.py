@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.deps import get_current_user
 from app.models.user import User
 from app.services.map_tickets import issue_map_ticket, verify_map_ticket
+from app.services.place import reverse_place
 from app.services.rate_limit import client_ip, enforce
 
 router = APIRouter(prefix="/maps", tags=["maps"])
@@ -30,6 +31,16 @@ def maps_config(user: User = Depends(get_current_user)):
         "note": "Azure Maps road tiles via server proxy. Ticket is not the subscription key. OSM if the key is missing.",
         "tile_url": f"/maps/tiles/{{z}}/{{x}}/{{y}}.png?ticket={ticket}" if ticket else None,
     }
+
+
+@router.get("/place")
+def maps_place(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    user: User = Depends(get_current_user),
+):
+    del user
+    return reverse_place(lat, lon)
 
 
 @router.get("/tiles/{z}/{x}/{y}.png")

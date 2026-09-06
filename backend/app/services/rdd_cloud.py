@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import time
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
@@ -26,7 +27,7 @@ CLASSES = [
     {"id": "D40", "name": "Pothole", "event_type": EventType.POTHOLE, "severity": Severity.HIGH},
 ]
 IMGSZ = 640
-CONF = 0.22
+CONF = 0.18
 IOU = 0.45
 _LOCK = Lock()
 
@@ -129,6 +130,7 @@ def detect_rdd(data: bytes, *, conf: float = CONF) -> dict[str, Any]:
     canvas, scale, pad_x, pad_y = _letterbox(image)
     arr = np.asarray(canvas, dtype=np.float32) / 255.0
     tensor = np.transpose(arr, (2, 0, 1))[None, ...]
+    t0 = time.perf_counter()
     try:
         with _LOCK:
             sess = _session()
@@ -140,6 +142,7 @@ def detect_rdd(data: bytes, *, conf: float = CONF) -> dict[str, Any]:
     except Exception as exc:
         empty["reason"] = str(exc)
         return empty
+    infer_ms = int(round((time.perf_counter() - t0) * 1000))
 
     detections = _decode(raw, orig_w, orig_h, scale, pad_x, pad_y, conf)
     return {
@@ -151,7 +154,8 @@ def detect_rdd(data: bytes, *, conf: float = CONF) -> dict[str, Any]:
         "runtime": "onnxruntime-cpu",
         "detections": detections,
         "count": len(detections),
-        "note": "India RDD on this still. Not certified field accuracy.",
+        "infer_ms": infer_ms,
+        "note": "India RDD on this still. App Service CPU, not a GPU stream. Typical 0.3–1.2 s plus Vision.",
     }
 
 

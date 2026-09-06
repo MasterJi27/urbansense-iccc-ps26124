@@ -4,11 +4,11 @@ import { useUi } from "../i18n.jsx";
 
 const GAPS = [
   { req: "iPhone / Android camera", now: "REAL", how: "Phone only: Chrome or Safari /field. ICCC desk is a different login. No CCTV page." },
-  { req: "Windshield boxes", now: "RULE_BASED", how: "On-device 640 India RDD. Road-band + full-frame merge. IoU tracker is persistence, same weights. Overlay is WASM; WebGPU only if the ONNX Runtime GPU EP attaches. Official event is the Azure still. Not a new test mAP." },
+  { req: "Windshield boxes", now: "RULE_BASED", how: "On-device India RDD. Expanded road-band + far-lane ROI. Overlay is WASM; WebGPU only if ORT attaches. Official event is the Azure still. Not 1 ms Azure." },
   { req: "Cloud road-damage on stills", now: "REAL", how: "Azure App Service YOLOv8s 640 ONNX CPU. More cores help stills. Not a GPU stream. Cabin bay still cannot invent a road defect." },
-  { req: "ICCC live desk", now: "REAL", how: "Phone pushes overlay ticks on /ws/field-live. Desk listens on /ws/live. Round-trip is tens of ms, not 1 ms." },
+  { req: "ICCC live desk", now: "REAL", how: "Phone pushes overlay ticks on /ws/field-live. Desk listens on /ws/live. Boxes now; official ticket after Azure still. Not 1 ms Azure. Composio is mail on FLEET_CONFIRMED only." },
   { req: "Flutter windshield", now: "REAL", how: "Same /field page in a WebView. Not a second detector." },
-  { req: "Pedestrian count this frame", now: "REAL", how: "COCO person on this still/overlay. Not a child detector, not a day-long street census." },
+  { req: "Pedestrian count this frame", now: "DISABLED", how: "COCO person net is off on /field. School VRU is geofence + speed, not a child detector." },
   { req: "Shake / rash from phone IMU", now: "RULE_BASED", how: "Accelerometer spike. Fast + shake → RASH_DRIVING. Slow + shake → pothole hit." },
   { req: "Fleet confirm (USP)", now: "RULE_BASED", how: "Second independent bus in 40 m / 6 h confirms. One phone cannot close a city ticket." },
   { req: "Indian MoRTH sign model", now: "DISABLED", how: "GIS missing-sign geofence only. Not shipped as a classifier." },
@@ -28,7 +28,11 @@ export default function HonestGaps() {
     {
       req: "Officer ping (Composio)",
       now: composio?.honesty || "DISABLED",
-      how: composio?.note || "COMPOSIO_API_KEY not set. Fleet confirm still saves.",
+      how: [
+        composio?.note || "COMPOSIO_API_KEY or COMPOSIO_NOTIFY_TO not set. Fleet confirm still saves. No officer ping.",
+        composio?.notify_to ? `To ${composio.notify_to}` : "",
+        composio?.last_error && !composio?.note?.includes("Last ping failed") ? `Last error: ${composio.last_error}` : "",
+      ].filter(Boolean).join(" "),
     },
     {
       req: "Azure Maps corridor tiles",

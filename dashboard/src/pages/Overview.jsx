@@ -7,12 +7,10 @@ import { Skeleton } from "../components/Skeleton.jsx";
 import HonestyChip from "../components/HonestyChip.jsx";
 import ConfirmationStrip from "../components/ConfirmationStrip.jsx";
 import FieldBoothCard from "../components/FieldBoothCard.jsx";
-import HonestGaps from "../components/HonestGaps.jsx";
 import LiveFeed from "../components/LiveFeed.jsx";
 import { useUi } from "../i18n.jsx";
-import DemoTruth from "../components/DemoTruth.jsx";
 import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
-import { mergeEventRow, mergeLiveSensor, openAuthedSocket, pollJson } from "../live/deskLive.js";
+import { applyEventMessage, mergeEventPoll, mergeLiveSensor, mergeSensorPoll, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 const color = { CRITICAL: "#e5484d", HIGH: "#ef7a18", MEDIUM: "#b7790f", LOW: "#0bb98a" };
 
@@ -34,7 +32,6 @@ export default function Overview() {
   const [buses, setBuses] = useState([]);
   const [sensors, setSensors] = useState([]);
   const [realEngines, setRealEngines] = useState(null);
-  const [ps, setPs] = useState(null);
   const [filter, setFilter] = useState("ALL");
   const [err, setErr] = useState("");
   const [heroLedger, setHeroLedger] = useState(null);
@@ -43,26 +40,26 @@ export default function Overview() {
   useEffect(() => {
     Promise.all([
       api("/analytics/summary").catch(() => null),
-      api("/events?limit=40").catch(() => []),
+      api("/events?live=1&limit=40").catch(() => []),
       api("/buses").catch(() => []),
       api("/sensor-nodes").catch(() => []),
       api("/ai/capabilities").catch(() => null),
-      api("/ai/ps26124").catch(() => null),
     ])
-      .then(([s, e, b, sn, caps, coverage]) => {
+      .then(([s, e, b, sn, caps]) => {
         setSum(s || EMPTY_SUMMARY);
         setEvents(Array.isArray(e) ? e : []);
         setBuses(b || []);
         setSensors(sn || []);
         if (caps) setRealEngines(Object.values(caps).filter((v) => v && v.ai_status === "REAL").length);
-        if (coverage) setPs(coverage);
       })
       .catch((ex) => setErr(ex.message));
     const token = getToken();
     const stopEvents = openAuthedSocket("/ws/events", token, (m) => {
       try {
         const msg = JSON.parse(m.data);
-        if (msg.event) setEvents((prev) => mergeEventRow(prev, msg.event, 40));
+        if (msg.event || msg.type === "event.deleted" || msg.type === "events.cleared") {
+          setEvents((prev) => applyEventMessage(prev, msg, 40, true));
+        }
       } catch {}
     });
     const stopLive = openAuthedSocket("/ws/live", token, (m) => {
@@ -71,30 +68,12 @@ export default function Overview() {
         setSensors((prev) => mergeLiveSensor(prev, msg));
       } catch {}
     });
-    const stopEventPoll = pollJson("/events?limit=40", (e) => {
-      if (Array.isArray(e)) setEvents(e);
-    }, 2000);
+    const stopEventPoll = pollJson("/events?live=1&limit=40", (e) => {
+      if (Array.isArray(e)) setEvents((prev) => mergeEventPoll(prev, e, 40));
+    }, 800);
     const stopSensorPoll = pollJson("/sensor-nodes", (sn) => {
-      if (!Array.isArray(sn)) return;
-      setSensors((prev) => {
-        const live = Array.isArray(prev) ? prev : [];
-        const byCode = new Map(live.map((s) => [s.code || s.id, s]));
-        for (const row of sn) {
-          const key = row.code || row.id;
-          const had = byCode.get(key) || {};
-          byCode.set(key, {
-            ...row,
-            last_boxes: (row.last_boxes && row.last_boxes.length) ? row.last_boxes : (had.last_boxes || []),
-            overlay_mode: row.overlay_mode || had.overlay_mode,
-            overlay_backend: row.overlay_backend || had.overlay_backend,
-            overlay_fps: row.overlay_fps || had.overlay_fps,
-            infer_ms: row.infer_ms || had.infer_ms,
-            seen_at: had.seen_at || (row.last_heartbeat_at ? Date.parse(row.last_heartbeat_at) : 0),
-          });
-        }
-        return [...byCode.values()];
-      });
-    }, 1000);
+      if (Array.isArray(sn)) setSensors((prev) => mergeSensorPoll(prev, sn));
+    }, 600);
     return () => {
       stopEvents();
       stopLive();
@@ -181,43 +160,7 @@ export default function Overview() {
 
       <LiveFeed sensors={sensors} />
 
-      <DemoTruth events={events} realEngines={realEngines} />
-
       <FieldBoothCard />
-
-      <HonestGaps />
-
-      {ps && (
-        <div className="card" style={{ marginBottom: 12 }}>
-          <h4>BEL PS 26124</h4>
-          <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{ps.note}</p>
-          <div className="stat-row"><span className="muted">Camera bays</span><b className="mono" style={{ fontSize: 12 }}>{(ps.camera_bays || []).join(" · ")}</b></div>
-          <div className="stat-row"><span className="muted">Coverage</span><b className="table-num">{Object.entries(ps.counts || {}).map(([k, v]) => `${v} ${k}`).join(" · ")}</b></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 10 }}>
-            {(ps.items || []).filter((row) => row.status === "REAL" || row.status === "RULE_BASED").map((row) => (
-              <div key={row.id} className="stat-row" style={{ margin: 0 }}>
-                <span style={{ fontSize: 12 }}>{row.requirement}</span>
-                <span className={`tag ${row.status === "REAL" ? "real" : row.status === "RULE_BASED" ? "rule" : row.status === "DISABLED" ? "off" : "sim"}`} style={{ fontSize: 10 }}>{row.status}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="cards" style={{ marginBottom: 12 }}>
-        <div className="card">
-          <h4>{t("juryTitle")}</h4>
-          <div className="stat-row"><span><b>{t("jury1t")}</b><div className="muted" style={{ fontSize: 12 }}>{t("jury1m")}</div></span></div>
-          <div className="stat-row"><span><b>{t("jury2t")}</b><div className="muted" style={{ fontSize: 12 }}>{t("jury2m")}</div></span></div>
-          <div className="stat-row"><span><b>{t("jury3t")}</b><div className="muted" style={{ fontSize: 12 }}>{t("jury3m")}</div></span></div>
-          <div className="stat-row"><span><b>{t("jury4t")}</b><div className="muted" style={{ fontSize: 12 }}>{t("jury4m")}</div></span></div>
-        </div>
-        <div className="card">
-          <h4>{t("evidenceG")}</h4>
-          <p className="muted" style={{ fontSize: 13, margin: 0 }}>{t("evidenceP")}</p>
-          <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>{t("dpdpBanner")}</p>
-        </div>
-      </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -278,7 +221,7 @@ export default function Overview() {
                 <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>{fused.fusion_reason}</p>
               </div>
             ) : (
-              <p className="muted">No fused event yet. JURY RUN creates BUS-042 first sighting, then BUS-017 fleet-confirm on the same pothole.</p>
+              <p className="muted">No live ticket yet. Arm a PIN, open /field, keep AUTO on.</p>
             )}
           </div>
           <div className="card" style={{ marginTop: 12 }}>

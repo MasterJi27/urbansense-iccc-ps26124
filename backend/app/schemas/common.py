@@ -15,6 +15,7 @@ class TokenOut(BaseModel):
     user_id: str
     full_name: str
     scope: str = "iccc"
+    bus_code: str | None = None
 
 
 class LoginIn(BaseModel):
@@ -26,12 +27,19 @@ class FieldJoinIn(BaseModel):
     code: str = Field(min_length=4, max_length=16)
 
 
+class FieldBoothIn(BaseModel):
+    bus_code: str = Field(min_length=1, max_length=32)
+
+
 class FieldBoothOut(BaseModel):
     code: str
     expires_in: int
     redeemed: bool = False
     join_path: str = "/field"
     note: str = "iPhone Safari opens /field, enters this PIN once, uses the phone camera. No Flutter install."
+    bus_code: str | None = None
+    joins: int = 0
+    max_joins: int = 4
 
 
 class RegisterIn(BaseModel):
@@ -136,6 +144,14 @@ class EventPatch(BaseModel):
     severity: Severity | None = None
 
 
+class EventIdsIn(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+class EventClearIn(BaseModel):
+    confirm: bool = False
+
+
 class VerifyIn(BaseModel):
     notes: str = ""
 
@@ -166,6 +182,14 @@ class HeartbeatIn(BaseModel):
     overlay_mode: str | None = None
     overlay_backend: str | None = None
     infer_ms: float | None = None
+    imu_mag: float | None = None
+    imu_ax: float | None = None
+    imu_ay: float | None = None
+    imu_az: float | None = None
+    gyro_z: float | None = None
+    gps_accuracy: float | None = None
+    gps_ok: bool | None = None
+    network_rtt_ms: float | None = None
 
 
 class AllocateIn(BaseModel):

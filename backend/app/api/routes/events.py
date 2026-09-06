@@ -6,10 +6,11 @@ from app.deps import get_current_user, require_iccc, require_roles
 from app.files import safe_filename
 from app.models.event import EventObservation, EventStatus, Evidence, Observation, UrbanEvent
 from app.models.user import User, UserRole
-from app.schemas.common import EventOut, EventPatch, ObservationIn, ObservationOut, VerifyIn
+from app.schemas.common import EventClearIn, EventIdsIn, EventOut, EventPatch, ObservationIn, ObservationOut, VerifyIn
 from app.services.audit import audit
 from app.services.azure_edge import StillRejected, draft_officer_brief, read_still
 from app.services.dpdp import sanitize_event, sanitize_observation
+from app.services.event_ops import CLEAR_NOTE, commit_purge, publish_cleared, publish_deleted, purge_event_tickets
 from app.services.fusion import build_confirmation_ledger
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
 
@@ -62,12 +63,50 @@ def list_events(
     db: Session = Depends(get_db),
     user: User = Depends(require_iccc),
     status: EventStatus | None = None,
+    live: bool = Query(False),
     limit: int = Query(200, le=500),
 ):
     q = db.query(UrbanEvent).order_by(UrbanEvent.updated_at.desc())
     if status:
         q = q.filter(UrbanEvent.status == status)
-    return [sanitize_event(EventOut.model_validate(row).model_dump(mode="json"), user) for row in q.limit(limit).all()]
+    if live:
+        q = q.filter(UrbanEvent.simulated.is_(False))
+    fetch = limit if not live else min(500, max(limit, limit * 4))
+    out = []
+    for row in q.limit(fetch).all():
+        extra = row.extra if isinstance(row.extra, dict) else {}
+        if live and extra.get("payload_kind") == "SEED":
+            continue
+        out.append(sanitize_event(EventOut.model_validate(row).model_dump(mode="json"), user))
+        if len(out) >= limit:
+            break
+    return out
+
+
+@router.post("/events/batch-delete")
+def batch_delete_events(
+    body: EventIdsIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_iccc),
+):
+    ids = commit_purge(db, purge_event_tickets(db, body.ids), user.id, f"batch n={len(body.ids)}")
+    background.add_task(publish_deleted, ids)
+    return {"deleted": len(ids), "ids": ids}
+
+
+@router.post("/events/clear")
+def clear_events(
+    body: EventClearIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_iccc),
+):
+    if body.confirm is not True:
+        raise HTTPException(400, "confirm must be true")
+    ids = commit_purge(db, purge_event_tickets(db, None), user.id, "clear-all")
+    background.add_task(publish_cleared)
+    return {"deleted": len(ids), "ids": ids, "note": CLEAR_NOTE}
 
 
 @router.get("/events/{event_id}")
@@ -180,6 +219,21 @@ def reject_event(
     audit(db, "event.reject", "event", event.id, user.id, body.notes)
     db.commit()
     return EventOut.model_validate(event)
+
+
+@router.delete("/events/{event_id}")
+def delete_event(
+    event_id: str,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_iccc),
+):
+    event = db.get(UrbanEvent, event_id) or db.query(UrbanEvent).filter(UrbanEvent.public_code == event_id).first()
+    if not event:
+        raise HTTPException(404, "Event not found")
+    ids = commit_purge(db, purge_event_tickets(db, [event.id]), user.id, event.public_code)
+    background.add_task(publish_deleted, ids)
+    return {"deleted": len(ids), "ids": ids}
 
 
 @router.post("/evidence/upload")

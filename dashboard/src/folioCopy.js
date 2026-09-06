@@ -86,6 +86,7 @@ export const MORE_TABS = [
   { to: "/assets", hi: "संपत्ति", en: "ASSETS" },
   { to: "/analytics", hi: "विश्लेषण", en: "ANALYTICS" },
   { to: "/sensors", hi: "सेंसर", en: "SENSORS" },
+  { to: "/about", hi: "जानकारी", en: "ABOUT" },
   { to: "/settings", hi: "सेटिंग", en: "SETTINGS" },
   { to: "/users", hi: "उपयोगकर्ता", en: "USERS" },
 ];

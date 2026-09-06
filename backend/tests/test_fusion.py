@@ -249,6 +249,77 @@ def test_cabin_pass_does_not_expire(client, admin_token):
     assert ev["extra"].get("clear_passes") in (None, [])
 
 
+def test_field_phone_does_not_fuse_onto_seed(client, admin_token):
+    seed = client.post(
+        "/observations",
+        json=_obs(
+            source_id="SEED-CP",
+            latitude=28.6328,
+            longitude=77.2195,
+            simulated=True,
+            extra={"payload_kind": "SEED", "ai_status": "SIMULATED"},
+        ),
+        headers=auth_header(admin_token),
+    )
+    assert seed.status_code == 200, seed.text
+    field = client.post(
+        "/observations",
+        json=_obs(
+            source_id="FIELD-IPHONE",
+            latitude=28.6328,
+            longitude=77.2195,
+            simulated=False,
+            extra={"payload_kind": "FIELD", "method": "phone-still", "ai_status": "DISABLED"},
+        ),
+        headers=auth_header(admin_token),
+    )
+    assert field.status_code == 200, field.text
+    body = field.json()
+    assert body["created_event"] is True
+    assert body["event"]["id"] != seed.json()["event"]["id"]
+    assert body["event"]["extra"]["payload_kind"] == "FIELD"
+    assert body["event"]["simulated"] is False
+    assert body["event"]["extra"].get("ai_status") != "SIMULATED"
+
+
+def test_events_live_drops_seed_keeps_field(client, admin_token):
+    seed = client.post(
+        "/observations",
+        json=_obs(
+            source_id="SEED-LIVE",
+            latitude=28.6410,
+            longitude=77.2410,
+            simulated=True,
+            extra={"payload_kind": "SEED", "ai_status": "SIMULATED"},
+        ),
+        headers=auth_header(admin_token),
+    )
+    field = client.post(
+        "/observations",
+        json=_obs(
+            source_id="FIELD-LIVE",
+            latitude=28.6420,
+            longitude=77.2420,
+            simulated=False,
+            extra={"payload_kind": "FIELD", "method": "phone-still", "ai_status": "DISABLED"},
+        ),
+        headers=auth_header(admin_token),
+    )
+    assert seed.status_code == 200 and field.status_code == 200, field.text
+    seed_id = seed.json()["event"]["id"]
+    field_id = field.json()["event"]["id"]
+    catalog = client.get("/events?limit=200", headers=auth_header(admin_token))
+    live = client.get("/events?live=1&limit=200", headers=auth_header(admin_token))
+    assert catalog.status_code == 200 and live.status_code == 200
+    catalog_ids = {row["id"] for row in catalog.json()}
+    live_ids = {row["id"] for row in live.json()}
+    assert seed_id in catalog_ids
+    assert seed_id not in live_ids
+    assert field_id in live_ids
+    assert all((row.get("extra") or {}).get("payload_kind") != "SEED" for row in live.json())
+    assert all(row["simulated"] is False for row in live.json())
+
+
 def test_distant_observations_remain_separate(client, admin_token):
     a = client.post(
         "/observations",

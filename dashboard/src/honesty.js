@@ -58,19 +58,24 @@ export function payloadHonesty(ev) {
 
 /** Jury-facing: seed payload ≠ engine capability. ROAD_DAMAGE seed is SEED, engine is REAL. */
 export function dualHonesty(ev) {
+  const extra = ev?.extra || {};
   const payload = payloadHonesty(ev);
   const engine = engineHonesty(ev);
-  const seed = ev?.extra?.payload_kind === "SEED" || (Boolean(ev?.simulated) && payload === HONESTY.SIMULATED);
-  const payloadLabel = seed ? "SEED" : payload;
+  const kind = extra.payload_kind;
+  const seed = kind === "SEED" || (Boolean(ev?.simulated) && payload === HONESTY.SIMULATED);
+  const field = kind === "FIELD";
+  const payloadLabel = seed ? "SEED" : (field ? "FIELD" : payload);
   return {
     payload,
     engine,
     payloadLabel,
     seed,
-    differ: payload !== engine || seed,
+    differ: payload !== engine || seed || field,
     title: seed
       ? `Seed/demo payload. Engine for ${ev?.event_type || "this type"} is ${engine}.`
-      : `${payload} payload • ${engine} engine`,
+      : field
+        ? `FIELD payload • ${engine} engine`
+        : `${payload} payload • ${engine} engine`,
   };
 }
 
