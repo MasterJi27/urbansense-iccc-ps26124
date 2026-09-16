@@ -12,6 +12,7 @@ Visible wordmark is **SADAKSAARTHI**. Login emails, Azure hostname (`app-urbanse
 
 This is **not** “AI pothole detection.” Potholes are one event class in a multi-source evidence platform.
 
+**Product brief (PPT):** [PRODUCT.md](PRODUCT.md)  
 **Full project document:** [PROJECT.md](PROJECT.md)  
 **Engineering approaches:** [docs/SOFTWARE_ENGINEERING.md](docs/SOFTWARE_ENGINEERING.md)  
 **Jury walk:** [docs/JURY_8MIN.md](docs/JURY_8MIN.md)

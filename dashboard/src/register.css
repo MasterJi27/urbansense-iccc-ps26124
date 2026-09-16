@@ -1195,3 +1195,127 @@ html[lang="hi"] .login-register .login-brand h1 {
   background: var(--surface);
   color: var(--text);
 }
+
+/* Overview: map as a side pane (ops-grid never loaded, so the map was a full-width strip). */
+.overview-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+.overview-desk-map {
+  position: sticky;
+  top: 10px;
+  min-width: 0;
+}
+.overview-map-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.overview-map-frame {
+  height: min(52vh, 480px);
+  min-height: 360px;
+}
+.overview-map-frame .corridor-map,
+.overview-desk-map.maprail .leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+.overview-quiet-link {
+  font-size: 13px;
+  font-weight: 700;
+}
+.overview-quiet-meta { font-size: 13px; }
+.overview-kpi-unit { font-size: 16px; }
+.overview-fusion-reason { margin: 8px 0 0; font-size: 14px; }
+
+@media (min-width: 1024px) {
+  .register-shell {
+    font-size: 17px;
+  }
+  .register-shell .page-title {
+    font-size: 28px;
+  }
+  .register-shell .page-sub,
+  .register-shell .page-header p {
+    font-size: 16px;
+  }
+  .register-shell .crumbs {
+    font-size: 13px;
+  }
+  .register-shell .folio-brand {
+    font-size: 26px;
+  }
+  .register-shell .folio-tab-hi {
+    font-size: 13px;
+  }
+  .register-shell .folio-tab-en {
+    font-size: 15px;
+  }
+  .register-shell .card h4,
+  .register-shell .section-title {
+    font-size: 13px;
+  }
+  .register-shell .kpi-card small {
+    font-size: 13px;
+  }
+  .register-shell .kpi-card b {
+    font-size: 32px;
+  }
+  .register-shell .kpi-card .delta {
+    font-size: 14px;
+  }
+  .register-shell .chip {
+    font-size: 14px;
+    padding: 8px 14px;
+  }
+  .register-shell .stat-row {
+    font-size: 16px;
+  }
+  .register-shell .evlink {
+    font-size: 16px;
+  }
+  .register-shell .usp-strip-line {
+    font-size: 26px;
+  }
+  .register-shell .usp-strip-kicker,
+  .register-shell .usp-cell-label {
+    font-size: 12px;
+  }
+  .register-shell .usp-cell b {
+    font-size: 17px;
+  }
+  .register-shell .badge,
+  .register-shell .tag {
+    font-size: 12px;
+  }
+  .register-shell table {
+    font-size: 15px;
+  }
+  .register-shell th {
+    font-size: 13px;
+  }
+  .register-shell .btn {
+    font-size: 14px;
+  }
+  .register-shell .overview-quiet-link,
+  .register-shell .overview-quiet-meta {
+    font-size: 14px;
+  }
+  .overview-desk {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .overview-desk {
+    grid-template-columns: 1fr;
+  }
+  .overview-desk-map {
+    position: static;
+  }
+  .overview-map-frame {
+    height: 240px;
+    min-height: 220px;
+  }
+}

@@ -135,6 +135,10 @@ export default function Overview() {
     .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || new Date(b.timestamp || b.created_at || b.updated_at) - new Date(a.timestamp || a.created_at || a.updated_at))
     .slice(0, 5);
   const attentionTotal = liveEvents.filter((e) => (e.severity === "CRITICAL" || e.severity === "HIGH") && e.status === "UNVERIFIED").length;
+  const mapCenter = fused?.latitude != null && fused?.longitude != null
+    ? [fused.latitude, fused.longitude]
+    : [28.62, 77.22];
+  const mapZoom = fused?.latitude != null ? 14 : 12;
 
   return (
     <div>
@@ -158,67 +162,63 @@ export default function Overview() {
 
       <ConfirmationStrip event={fused} ledger={heroLedger} />
 
-      <LiveFeed sensors={sensors} />
-
-      <FieldBoothCard />
-
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <h4 style={{ margin: 0 }}>{t("needsAttention")} <span className="table-num muted">{attentionTotal}</span></h4>
-          <Link to="/events" className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{t("viewAll")}</Link>
-        </div>
-        {needsAttention.length === 0 ? (
-          <div className="empty">All clear — no CRITICAL/HIGH unverified.</div>
-        ) : (
-          <div aria-live="polite" style={{ display: "grid" }}>
-            {needsAttention.map((e) => (
-              <div className="stat-row" key={e.id}>
-                <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
-                  <span className={`badge ${e.severity}`}>{e.severity}</span>
-                  <Link className="evlink" to={`/events/${e.id}`}>{e.public_code}</Link>
-                  <span className="muted" style={{ fontSize: 12 }}>{e.event_type}</span>
-                  <HonestyChip event={e} compact />
-                  <span className="muted table-num" style={{ fontSize: 12 }}>{timeAgo(e.timestamp || e.created_at || e.updated_at)}</span>
-                </span>
-                <Link to={`/events/${e.id}`} className="muted" style={{ fontSize: 12, fontWeight: 700 }}>Open</Link>
+      <div className="overview-desk">
+        <div className="overview-desk-main">
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <h4 style={{ margin: 0 }}>{t("needsAttention")} <span className="table-num muted">{attentionTotal}</span></h4>
+              <Link to="/events" className="muted overview-quiet-link">{t("viewAll")}</Link>
+            </div>
+            {needsAttention.length === 0 ? (
+              <div className="empty">All clear — no CRITICAL/HIGH unverified.</div>
+            ) : (
+              <div aria-live="polite" style={{ display: "grid" }}>
+                {needsAttention.map((e) => (
+                  <div className="stat-row" key={e.id}>
+                    <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+                      <span className={`badge ${e.severity}`}>{e.severity}</span>
+                      <Link className="evlink" to={`/events/${e.id}`}>{e.public_code}</Link>
+                      <span className="muted overview-quiet-meta">{e.event_type}</span>
+                      <HonestyChip event={e} compact />
+                      <span className="muted table-num overview-quiet-meta">{timeAgo(e.timestamp || e.created_at || e.updated_at)}</span>
+                    </span>
+                    <Link to={`/events/${e.id}`} className="muted overview-quiet-link">Open</Link>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="kpis">
-        <div className="kpi-card">
-          <div className="kpi-top"><small>{t("activeBuses")}</small></div>
-          <b className="table-num">{sum.active_buses}</b>
-          <div className="delta"><span className="status-dot on" aria-hidden="true" /> {sensors.filter(s=>s.camera_status==="ONLINE").length} {t("camerasOnline")}</div>
-        </div>
-        <div className={`kpi-card ${sum.critical_events > 0 ? "crit" : ""}`}>
-          <div className="kpi-top"><small>{t("openEventsKpi")}</small></div>
-          <b className="table-num">{sum.total_events}</b>
-          <div className="delta">{sum.unverified_events} {t("unverified")} • {sum.critical_events} {t("CRITICAL")}/{t("HIGH")}</div>
-        </div>
-        <div className={`kpi-card ${sum.road_health < 60 ? "warn" : ""}`}>
-          <div className="kpi-top"><small>{t("roadHealthKpi")}</small></div>
-          <b className="table-num">{sum.road_health}<span className="muted" style={{fontSize:14}}>/100</span></b>
-          <div className="delta">{t("ruleBased")}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-top"><small>{t("aiReal")}</small></div>
-          <b className="table-num">{realEngines ?? "—"}</b>
-          <div className="delta">YOLO RDD + Vehicles/Track + ANPR</div>
-        </div>
-      </div>
+          <div className="kpis">
+            <div className="kpi-card">
+              <div className="kpi-top"><small>{t("activeBuses")}</small></div>
+              <b className="table-num">{sum.active_buses}</b>
+              <div className="delta"><span className="status-dot on" aria-hidden="true" /> {sensors.filter(s=>s.camera_status==="ONLINE").length} {t("camerasOnline")}</div>
+            </div>
+            <div className={`kpi-card ${sum.critical_events > 0 ? "crit" : ""}`}>
+              <div className="kpi-top"><small>{t("openEventsKpi")}</small></div>
+              <b className="table-num">{sum.total_events}</b>
+              <div className="delta">{sum.unverified_events} {t("unverified")} • {sum.critical_events} {t("CRITICAL")}/{t("HIGH")}</div>
+            </div>
+            <div className={`kpi-card ${sum.road_health < 60 ? "warn" : ""}`}>
+              <div className="kpi-top"><small>{t("roadHealthKpi")}</small></div>
+              <b className="table-num">{sum.road_health}<span className="muted overview-kpi-unit">/100</span></b>
+              <div className="delta">{t("ruleBased")}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-top"><small>{t("aiReal")}</small></div>
+              <b className="table-num">{realEngines ?? "—"}</b>
+              <div className="delta">YOLO RDD + Vehicles/Track + ANPR</div>
+            </div>
+          </div>
 
-      <div className="ops-grid">
-        <div>
           <div className="card">
             <h4>Latest fused event</h4>
             {fused ? (
               <div>
                 <Link className="evlink" to={`/events/${fused.id}`}>{fused.public_code}</Link>
                 <span className="muted"> · {fused.event_type} · {patrolLabel(fused)} · {fused.observation_count} observations</span>
-                <p className="muted" style={{ margin: "8px 0 0", fontSize: 13 }}>{fused.fusion_reason}</p>
+                <p className="muted overview-fusion-reason">{fused.fusion_reason}</p>
               </div>
             ) : (
               <p className="muted">No live ticket yet. Arm a PIN, open /field, keep AUTO on.</p>
@@ -231,32 +231,44 @@ export default function Overview() {
             <Link to="/work-orders" className="btn ghost" style={{ marginTop: 10 }}>{t("workOrders")}</Link>
           </div>
         </div>
-        <div className="maprail">
-          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)" }}>
+
+        <aside className="overview-desk-map maprail" aria-label="Corridor map">
+          <div className="overview-map-head">
             <h4 style={{ margin: 0 }}>Map · {tiles.caption}</h4>
           </div>
-          <CorridorMap center={[28.62, 77.22]} zoom={11} height={320} hideCaption>
-            {filtered.map((e) => (
-              <CircleMarker key={e.id} center={[e.latitude, e.longitude]} radius={e.observation_count > 1 ? 10 : 6} pathOptions={{ color: color[e.severity] || "#155a8a", fillColor: color[e.severity] || "#155a8a", fillOpacity: 0.28, weight: 2 }}>
-                <Popup><Link to={`/events/${e.id}`}>{e.public_code}</Link> · {e.event_type}</Popup>
-              </CircleMarker>
-            ))}
-            {sensors.filter((s) => s.latitude != null && s.longitude != null).map((s) => {
-              const hot = (s.last_boxes || []).length > 0;
-              return (
-                <CircleMarker
-                  key={`live-${s.id || s.code}`}
-                  center={[s.latitude, s.longitude]}
-                  radius={hot ? 10 : 6}
-                  pathOptions={{ color: "#111", fillColor: hot ? "#e5484d" : "#5b8def", fillOpacity: 0.9, weight: 1 }}
-                >
-                  <Popup>{s.bus_code || s.code} · people {s.person_count || 0} · boxes {(s.last_boxes || []).length}</Popup>
+          <div className="overview-map-frame">
+            <CorridorMap
+              center={mapCenter}
+              zoom={mapZoom}
+              height="100%"
+              style={{ height: "100%", width: "100%" }}
+              hideCaption
+            >
+              {filtered.map((e) => (
+                <CircleMarker key={e.id} center={[e.latitude, e.longitude]} radius={e.observation_count > 1 ? 10 : 6} pathOptions={{ color: color[e.severity] || "#155a8a", fillColor: color[e.severity] || "#155a8a", fillOpacity: 0.28, weight: 2 }}>
+                  <Popup><Link to={`/events/${e.id}`}>{e.public_code}</Link> · {e.event_type}</Popup>
                 </CircleMarker>
-              );
-            })}
-          </CorridorMap>
-        </div>
+              ))}
+              {sensors.filter((s) => s.latitude != null && s.longitude != null).map((s) => {
+                const hot = (s.last_boxes || []).length > 0;
+                return (
+                  <CircleMarker
+                    key={`live-${s.id || s.code}`}
+                    center={[s.latitude, s.longitude]}
+                    radius={hot ? 10 : 6}
+                    pathOptions={{ color: "#111", fillColor: hot ? "#e5484d" : "#5b8def", fillOpacity: 0.9, weight: 1 }}
+                  >
+                    <Popup>{s.bus_code || s.code} · people {s.person_count || 0} · boxes {(s.last_boxes || []).length}</Popup>
+                  </CircleMarker>
+                );
+              })}
+            </CorridorMap>
+          </div>
+        </aside>
       </div>
+
+      <LiveFeed sensors={sensors} />
+      <FieldBoothCard />
     </div>
   );
 }
