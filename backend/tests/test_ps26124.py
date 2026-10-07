@@ -29,7 +29,7 @@ def test_cabin_still_does_not_become_pothole(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("cabin.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.61", "longitude": "77.20", "source_id": "BUS-042-CABIN", "imu_mag": "2.4", "camera_bay": "CABIN"},
+        data={"gps_accuracy": "8", "latitude": "28.61", "longitude": "77.20", "source_id": "BUS-042-CABIN", "imu_mag": "2.4", "camera_bay": "CABIN"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["event"]["event_type"] != "POTHOLE"
@@ -41,7 +41,7 @@ def test_bus_stream_frame_front(client, admin_token):
         "/ingest/bus/stream-frame",
         headers=auth_header(admin_token),
         files={"file": ("front.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.612", "longitude": "77.201", "source_id": "BUS-042-FRONT", "camera_bay": "FRONT"},
+        data={"gps_accuracy": "8", "latitude": "28.612", "longitude": "77.201", "source_id": "BUS-042-FRONT", "camera_bay": "FRONT"},
     )
     assert r.status_code == 200, r.text
     ev = r.json()["event"]

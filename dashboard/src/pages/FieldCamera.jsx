@@ -5,6 +5,8 @@ import FieldPulse from "../field/FieldPulse.jsx";
 import { CADENCE_IDS, isPatrol } from "../field/cadence.js";
 import { useFieldOverlay } from "../field/useFieldOverlay.js";
 import { startLiveBuffer, vpnHint, readNetwork } from "../field/livePhoto.js";
+import { flushOutbox, listOutbox, queueStill, rememberTicket } from "../field/outbox.js";
+import { nextJpegQuality, stampLine } from "../field/stillStamp.js";
 import { api, getScope, getToken, setSession, wsUrl } from "../api";
 import { useUi } from "../i18n.jsx";
 
@@ -22,6 +24,12 @@ function readCadence() {
 
 function fieldOrigin() {
   return window.location.origin;
+}
+
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("JPEG encode failed"))), "image/jpeg", quality);
+  });
 }
 
 function asBusCode(raw) {
@@ -77,6 +85,8 @@ export default function FieldCamera() {
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
+  const [outbox, setOutbox] = useState(() => listOutbox());
+  const [repairDue, setRepairDue] = useState(null);
   const [boxes, setBoxes] = useState([]);
   const [cadence, setCadence] = useState(readCadence);
   const patrol = isPatrol(cadence);
@@ -106,28 +116,54 @@ export default function FieldCamera() {
 
   async function blobFromVideo() {
     const video = videoRef.current;
-    if (!video || !video.videoWidth) throw new Error("Camera not ready");
-    const max = 1280;
+    if (!video || !video.videoWidth) throw new Error(t("fieldErrCamera"));
+    const max = 960;
     const scale = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
-    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("JPEG encode failed"))), "image/jpeg", 0.86);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const here = fixRef.current;
+    const bayName = facing === "user" ? "CABIN" : "FRONT";
+    const stamp = stampLine({
+      at: new Date().toISOString().slice(0, 19),
+      lat: here?.lat,
+      lng: here?.lng,
+      bus: busId || "",
+      bay: bayName,
     });
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, canvas.height - 28, canvas.width, 28);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "14px sans-serif";
+    ctx.fillText(stamp, 8, canvas.height - 9);
+    let quality = 0.72;
+    let blob = await canvasToJpeg(canvas, quality);
+    while (blob && blob.size > 150 * 1024 && quality > 0.4) {
+      quality = nextJpegQuality(blob.size, quality);
+      blob = await canvasToJpeg(canvas, quality);
+    }
+    if (!blob) throw new Error("JPEG encode failed");
+    return blob;
   }
 
-  async function postStill(blob) {
+  async function postStill(blob, meta = {}) {
     const here = fixRef.current;
-    if (here?.lat == null || here?.lng == null) {
-      throw new Error("Allow location");
+    const lat = meta.lat ?? here?.lat;
+    const lng = meta.lng ?? here?.lng;
+    const acc = meta.acc ?? here?.acc;
+    if (lat == null || lng == null) {
+      throw new Error(t("fieldErrLocation"));
+    }
+    if (acc == null || Number(acc) > 25) {
+      throw new Error(acc == null ? t("fieldErrLocation") : t("fieldErrAccuracy"));
     }
     const still = new FormData();
     still.append("file", blob, "field-still.jpg");
-    still.append("latitude", String(here.lat));
-    still.append("longitude", String(here.lng));
-    if (here.acc != null) still.append("gps_accuracy", String(Number(here.acc).toFixed(1)));
+    still.append("latitude", String(lat));
+    still.append("longitude", String(lng));
+    still.append("gps_accuracy", String(Number(acc).toFixed(1)));
     still.append("source_id", sourceId);
     still.append("bus_id", busId);
     still.append("camera_bay", facing === "user" ? "CABIN" : "FRONT");
@@ -176,7 +212,7 @@ export default function FieldCamera() {
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      setGpsErr("Allow location");
+      setGpsErr(t("fieldErrLocation"));
       return undefined;
     }
     const opts = { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 };
@@ -192,7 +228,7 @@ export default function FieldCamera() {
     }
     function onBad() {
       setFix(null);
-      setGpsErr("Allow location");
+      setGpsErr(t("fieldErrLocation"));
     }
     navigator.geolocation.getCurrentPosition(onOk, onBad, opts);
     const watch = navigator.geolocation.watchPosition(onOk, onBad, opts);
@@ -227,6 +263,29 @@ export default function FieldCamera() {
     return () => {
       cancelled = true;
       window.clearInterval(id);
+    };
+  }, [authed]);
+
+  useEffect(() => {
+    if (!authed) return undefined;
+    let stop = false;
+    async function tick() {
+      if (navigator.onLine) {
+        const next = await flushOutbox((file) => postStill(file));
+        if (!stop) setOutbox(next);
+      }
+      const here = fixRef.current;
+      if (here?.lat == null) return;
+      const due = await api(`/ingest/repair-due?latitude=${here.lat}&longitude=${here.lng}`).catch(() => null);
+      if (!stop) setRepairDue(due?.due ? due : null);
+    }
+    tick();
+    const id = window.setInterval(tick, 20000);
+    window.addEventListener("online", tick);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+      window.removeEventListener("online", tick);
     };
   }, [authed]);
 
@@ -322,7 +381,7 @@ export default function FieldCamera() {
           await videoRef.current.play().catch(() => {});
         }
       } catch (ex) {
-        if (!dead) setCamErr(ex.message || "Camera denied. iPhone needs HTTPS (Azure) or a file still.");
+        if (!dead) setCamErr(t("fieldErrCamera"));
       }
     })();
     return () => {
@@ -365,7 +424,7 @@ export default function FieldCamera() {
         },
         () => {
           setFix(null);
-          setGpsErr("Allow location");
+          setGpsErr(t("fieldErrLocation"));
         },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
       );
@@ -389,16 +448,22 @@ export default function FieldCamera() {
   async function senseStill(blob) {
     const here = fixRef.current;
     if (here?.lat == null || here?.lng == null) {
-      setErr("Allow location");
+      setErr(t("fieldErrLocation"));
       return;
     }
     setErr("");
     setResult(null);
     setBusy("still");
+    let jpeg = null;
     try {
-      const jpeg = blob instanceof Blob ? blob : await blobFromVideo();
+      jpeg = blob instanceof Blob ? blob : await blobFromVideo();
       const ingested = await postStill(jpeg);
       const ev = ingested.event || {};
+      setOutbox(rememberTicket({
+        status: ev.extra?.patrol_state === "FLEET_CONFIRMED" ? "confirmed" : "waiting",
+        code: ev.public_code || "",
+        note: ev.extra?.patrol_state || "sent",
+      }));
       const found = ingested.detections || ev.extra?.detections || [];
       setBoxes(found);
       lastIngest.current = Date.now();
@@ -422,6 +487,14 @@ export default function FieldCamera() {
         ? "Sense failed on the server. Try TAP again, or pick a photo below."
         : ex.message;
       setErr(msg);
+      if (msg && /fetch|network|failed/i.test(msg) && jpeg) {
+        setOutbox(await queueStill(jpeg, {
+          note: "Queued. Will send when the network returns.",
+          lat: here.lat,
+          lng: here.lng,
+          acc: here.acc,
+        }));
+      }
       if (!getToken()) setAuthed(false);
     } finally {
       setBusy("");
@@ -701,12 +774,24 @@ export default function FieldCamera() {
         <span className={`gps-chip ${hasGps ? "is-ok" : "is-bad"}`}>
           {hasGps
             ? `${t("fieldGps")} ${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)} ±${Number(fix.acc || 0).toFixed(0)} m`
-            : (gpsErr || "Allow location")}
+            : (gpsErr || t("fieldErrLocation"))}
         </span>
         {place?.label ? <span className="tag info">{place.locality || place.label}</span> : null}
         {vpn ? <span className="tag off">{t("fieldVpn")}</span> : null}
         {imu != null ? <span className="tag info">IMU {imu.toFixed(1)}</span> : null}
       </div>
+      {repairDue?.due ? (
+        <p className="err" role="status">Verify {repairDue.event_code}: {repairDue.note}</p>
+      ) : null}
+      {outbox.length > 0 ? (
+        <ul className="field-steps" aria-label="Last tickets">
+          {outbox.slice(0, 5).map((row) => (
+            <li key={row.id} className={row.status === "failed" ? "" : "is-on"}>
+              {row.status} {row.code || row.note}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div className="field-stage">
         <video ref={videoRef} className="field-video" playsInline muted autoPlay />
@@ -740,7 +825,7 @@ export default function FieldCamera() {
         <button className="btn folio-stamp field-sense" type="button" disabled={!!busy || !hasGps} onClick={() => senseStill()}>
           {busy === "still" ? "…" : (patrol ? t("fieldSense") : t("fieldReportNow"))}
         </button>
-        {!hasGps && <div role="alert" className="err">{gpsErr || "Allow location"}</div>}
+        {!hasGps && <div role="alert" className="err">{gpsErr || t("fieldErrLocation")}</div>}
         {err && <div role="alert" className="err">{err}</div>}
         {result && (
           <div className="field-result">

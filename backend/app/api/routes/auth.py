@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user, require_iccc, require_roles
 from app.models.user import User, UserRole
@@ -34,6 +35,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     if not user or not user.is_active or not verify_password(body.password, user.hashed_password):
         gate.fail(lock_key, limit=5, window_s=900, lock_s=900)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not get_settings().is_development and body.password == "UrbanSense@2026":
+        raise HTTPException(status_code=401, detail="Demo password is disabled outside development")
     gate.ok(lock_key)
     token = create_access_token(user.id, user.role.value, scope="iccc")
     return TokenOut(access_token=token, role=user.role, user_id=user.id, full_name=user.full_name, scope="iccc")

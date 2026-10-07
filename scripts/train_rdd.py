@@ -114,10 +114,12 @@ def main() -> int:
     parser.add_argument("--data", help="Ultralytics data yaml (train/val + names D00 D10 D20 D40)")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--model", default=str(WEIGHTS) if WEIGHTS.is_file() else "yolov8s.pt")
     parser.add_argument("--device", default="")
     parser.add_argument("--eval-only", action="store_true", help="Val existing weights; do not train")
     parser.add_argument("--lr0", type=float, default=0.001)
+    parser.add_argument("--optimizer", default="SGD", help="SGD keeps lr0. auto ignores it.")
     parser.add_argument("--freeze", type=int, default=10)
     parser.add_argument("--patience", type=int, default=25)
     parser.add_argument("--close-mosaic", type=int, default=15)
@@ -157,9 +159,10 @@ def main() -> int:
         "epochs": args.epochs,
         "imgsz": args.imgsz,
         "device": device,
-        "batch": 8,
+        "batch": args.batch,
         "workers": 2,
         "patience": args.patience,
+        "optimizer": args.optimizer,
         "lr0": args.lr0,
         "lrf": 0.01,
         "freeze": args.freeze,

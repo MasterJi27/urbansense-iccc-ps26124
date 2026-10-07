@@ -124,10 +124,11 @@ def _error_text(res: httpx.Response) -> str:
 
 
 def notify_fleet_confirmed(event) -> dict[str, Any]:
-    """Fail closed. Never raises into fusion."""
+    """Fail closed. Never raises into fusion. SMS webhook is independent of Gmail."""
+    sms = _ping_sms(event)
     status = composio_status()
     if status["honesty"] != "REAL":
-        return status
+        return {**status, "sms": sms}
     settings = get_settings()
     public = getattr(event, "public_code", "") or "EVENT"
     kind = getattr(event, "event_type", None)
@@ -162,10 +163,29 @@ def notify_fleet_confirmed(event) -> dict[str, Any]:
             err = _error_text(res)
             log.warning("composio %s failed %s %s", tool, res.status_code, err)
             _record(False, error=err, status_code=res.status_code)
-            return {"honesty": "DISABLED", "ok": False, "status_code": res.status_code, "error": err}
+            return {"honesty": "DISABLED", "ok": False, "status_code": res.status_code, "error": err, "sms": sms}
         _record(True, status_code=res.status_code)
-        return {"honesty": "REAL", "ok": True, "tool": tool}
+        return {"honesty": "REAL", "ok": True, "tool": tool, "sms": sms}
     except Exception as exc:
         log.exception("composio ping skipped")
         _record(False, error=f"{type(exc).__name__}: {exc}"[:280])
-        return {"honesty": "DISABLED", "ok": False}
+        return {"honesty": "DISABLED", "ok": False, "sms": sms}
+
+
+def _ping_sms(event) -> dict[str, Any]:
+    settings = get_settings()
+    url = (getattr(settings, "officer_sms_webhook", "") or "").strip()
+    if not url:
+        return {"honesty": "DISABLED", "channel": "sms", "note": "OFFICER_SMS_WEBHOOK is empty. Confirm still saves."}
+    public = getattr(event, "public_code", "") or "EVENT"
+    kind = getattr(event, "event_type", None)
+    kind_s = kind.value if hasattr(kind, "value") else str(kind or "")
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            res = client.post(url, json={"text": f"SadakSaarthi {public} {kind_s} FLEET_CONFIRMED", "event_id": getattr(event, "id", "")})
+        if res.status_code >= 400:
+            return {"honesty": "DISABLED", "channel": "sms", "ok": False, "status_code": res.status_code}
+        return {"honesty": "REAL", "channel": "sms", "ok": True}
+    except Exception as exc:
+        log.warning("sms webhook skipped: %s", exc)
+        return {"honesty": "DISABLED", "channel": "sms", "ok": False}

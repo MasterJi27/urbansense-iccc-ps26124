@@ -14,7 +14,7 @@ def test_phone_still_without_azure_vision(client, admin_token, tmp_path, monkeyp
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("bump.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01", "imu_mag": "18"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01", "imu_mag": "18"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -64,7 +64,7 @@ def test_phone_still_projects_pin_ahead(client, admin_token, tmp_path, monkeypat
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("ahead.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "FIELD-AHEAD", "heading": "90"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "FIELD-AHEAD", "heading": "90"},
     )
     assert r.status_code == 200, r.text
     ev = r.json()["event"]
@@ -84,7 +84,7 @@ def test_phone_still_field_iphone_is_not_a_bus_fk(client, admin_token, tmp_path,
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("field.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.61", "longitude": "77.21", "source_id": "FIELD-IPHONE", "bus_id": "FIELD-IPHONE"},
+        data={"gps_accuracy": "8", "latitude": "28.61", "longitude": "77.21", "source_id": "FIELD-IPHONE", "bus_id": "FIELD-IPHONE"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -101,7 +101,7 @@ def test_phone_still_resolves_bus_code(client, admin_token, tmp_path, monkeypatc
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("bus.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.61", "longitude": "77.21", "source_id": "BUS-042-FRONT", "bus_id": "BUS-042", "imu_mag": "1.9"},
+        data={"gps_accuracy": "8", "latitude": "28.61", "longitude": "77.21", "source_id": "BUS-042-FRONT", "bus_id": "BUS-042", "imu_mag": "1.9"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["observation"]["bus_id"]
@@ -115,7 +115,7 @@ def test_phone_still_repeat_same_filename(client, admin_token, tmp_path, monkeyp
     payload = {
         "headers": auth_header(admin_token),
         "files": {"file": ("field-still.jpg", JPEG, "image/jpeg")},
-        "data": {"latitude": "28.61", "longitude": "77.21", "source_id": "BUS-017-P1", "bus_id": "BUS-017"},
+        "data": {"gps_accuracy": "8", "latitude": "28.61", "longitude": "77.21", "source_id": "BUS-017-P1", "bus_id": "BUS-017"},
     }
     a = client.post("/ingest/phone/still", **payload)
     b = client.post("/ingest/phone/still", **payload)
@@ -129,7 +129,7 @@ def test_phone_still_rejects_empty(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("empty.jpg", b"", "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
     )
     assert r.status_code == 400
 
@@ -139,7 +139,7 @@ def test_phone_still_rejects_non_image(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("notes.txt", b"hello-not-an-image", "text/plain")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
     )
     assert r.status_code == 400
 
@@ -150,7 +150,7 @@ def test_phone_still_rejects_oversize(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("huge.jpg", huge, "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-PHONE-01"},
     )
     assert r.status_code == 400
 
@@ -183,7 +183,7 @@ def test_officer_brief_disabled(client, admin_token):
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("bump.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.63", "longitude": "77.21", "source_id": "NODE-PHONE-02", "imu_mag": "2.1"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.21", "source_id": "NODE-PHONE-02", "imu_mag": "2.1"},
     )
     assert still.status_code == 200, still.text
     event_id = still.json()["event"]["id"]
@@ -218,7 +218,7 @@ def test_phone_still_maps_mocked_vision(client, admin_token, tmp_path, monkeypat
         "/ingest/phone/still",
         headers=auth_header(admin_token),
         files={"file": ("road.jpg", JPEG, "image/jpeg")},
-        data={"latitude": "28.64", "longitude": "77.23", "source_id": "NODE-PHONE-03"},
+        data={"gps_accuracy": "8", "latitude": "28.64", "longitude": "77.23", "source_id": "NODE-PHONE-03"},
     )
     assert r.status_code == 200, r.text
     ev = r.json()["event"]
@@ -244,7 +244,7 @@ def test_phone_still_keeps_live_clip(client, admin_token, tmp_path, monkeypatch)
             "file": ("bump.jpg", JPEG, "image/jpeg"),
             "clip": ("live.webm", WEBM, "video/webm"),
         },
-        data={"latitude": "28.63", "longitude": "77.22", "source_id": "NODE-CLIP-01"},
+        data={"gps_accuracy": "8", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-CLIP-01"},
     )
     assert r.status_code == 200, r.text
     extra = r.json()["event"]["extra"]
@@ -252,3 +252,58 @@ def test_phone_still_keeps_live_clip(client, admin_token, tmp_path, monkeypatch)
     assert extra["live_photo_url"]
     assert extra["scan_parallel"] is True
     assert extra.get("place") is not None
+
+
+def test_phone_still_rejects_poor_gps(client, admin_token):
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("bump.jpg", JPEG, "image/jpeg")},
+        data={"gps_accuracy": "40", "latitude": "28.63", "longitude": "77.22", "source_id": "NODE-GPS"},
+    )
+    assert r.status_code == 400
+    assert "worse than 25" in r.text
+
+
+def test_phone_still_skips_speed_breaker(client, admin_token):
+    made = client.post(
+        "/assets",
+        headers=auth_header(admin_token),
+        json={
+            "code": "BRK-TEST-01",
+            "asset_type": "ROAD",
+            "name": "Speed breaker",
+            "latitude": 28.64,
+            "longitude": 77.23,
+        },
+    )
+    assert made.status_code == 200, made.text
+    r = client.post(
+        "/ingest/phone/still",
+        headers=auth_header(admin_token),
+        files={"file": ("bump.jpg", JPEG, "image/jpeg")},
+        data={"gps_accuracy": "6", "latitude": "28.64", "longitude": "77.23", "source_id": "NODE-BRK", "imu_mag": "18"},
+    )
+    assert r.status_code == 409
+    assert "BRK-TEST-01" in r.text
+
+
+def test_phone_still_blocks_outside_demo_corridor(client, admin_token, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("DEMO_CORRIDOR_RADIUS_M", "200")
+    monkeypatch.setenv("DEMO_CORRIDOR_LAT", "28.6328")
+    monkeypatch.setenv("DEMO_CORRIDOR_LON", "77.2195")
+    get_settings.cache_clear()
+    try:
+        r = client.post(
+            "/ingest/phone/still",
+            headers=auth_header(admin_token),
+            files={"file": ("bump.jpg", JPEG, "image/jpeg")},
+            data={"gps_accuracy": "6", "latitude": "28.90", "longitude": "77.50", "source_id": "NODE-FAR"},
+        )
+        assert r.status_code == 400
+        assert "demo corridor" in r.text
+    finally:
+        monkeypatch.delenv("DEMO_CORRIDOR_RADIUS_M", raising=False)
+        get_settings.cache_clear()

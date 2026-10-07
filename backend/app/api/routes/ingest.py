@@ -4,14 +4,16 @@ from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.event import EventType, Severity, SourceType
+from app.geo import haversine_m
+from app.models.event import EventType, Severity, SourceType, UrbanEvent
 from app.models.user import User
+from app.models.work_order import WorkOrder, WorkOrderStatus
 from app.schemas.common import ObservationIn, ObservationOut, EventOut
 from app.services.dpdp import sanitize_event, sanitize_observation
 from app.services.azure_edge import (
@@ -25,6 +27,7 @@ from app.services.azure_edge import (
 )
 from app.services.place import reverse_place
 from app.services.bbox_severity import severity_from_boxes
+from app.services.field_gate import corridor_block_reason, gps_block_reason, speed_breaker_code
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
 from app.services.ahead_gps import project_ahead
 from app.services.imu_rules import shake_event_type
@@ -245,6 +248,18 @@ async def ingest_phone_still(
 ):
     if latitude is None or longitude is None:
         raise HTTPException(status_code=400, detail="GPS fix required")
+    blocked = gps_block_reason(gps_accuracy)
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
+    outside = corridor_block_reason(latitude, longitude)
+    if outside:
+        raise HTTPException(status_code=400, detail=outside)
+    breaker = speed_breaker_code(db, latitude, longitude)
+    if breaker:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Speed-breaker {breaker} is within 25 m. No pothole ticket.",
+        )
     try:
         data = await read_still(file)
     except StillRejected as exc:
@@ -368,3 +383,37 @@ async def ingest_bus_stream_frame(
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return await _ingest(body, SourceType.BUS_CCTV, db, user, background)
+
+
+@router.get("/repair-due")
+def repair_due(
+    latitude: float = Query(...),
+    longitude: float = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Next bus through a repaired cell is asked for a verify still."""
+    rows = (
+        db.query(WorkOrder)
+        .filter(WorkOrder.status == WorkOrderStatus.RE_VERIFICATION, WorkOrder.event_id.isnot(None))
+        .all()
+    )
+    best = None
+    best_dist = 40.0
+    for wo in rows:
+        ev = db.get(UrbanEvent, wo.event_id)
+        if ev is None or ev.latitude is None or ev.longitude is None:
+            continue
+        dist = haversine_m(latitude, longitude, ev.latitude, ev.longitude)
+        if dist <= best_dist and (best is None or dist < best[0]):
+            best = (dist, wo, ev)
+    if best is None:
+        return {"due": False}
+    dist, wo, ev = best
+    return {
+        "due": True,
+        "distance_m": round(dist, 1),
+        "work_order": wo.public_code,
+        "event_code": ev.public_code,
+        "note": "Repair is marked. Take a verify still of this cell.",
+    }

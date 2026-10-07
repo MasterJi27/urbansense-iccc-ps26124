@@ -45,5 +45,25 @@ models/**/*.onnx
 models/**/runs/
 runs/
 *.part
+*.sep5
 .data/
+# ---- deploy hygiene: stray / experimental weights are never pushed ----
+# Root strays (auto-downloads, experiments). Deployment RDD lives ONLY at
+# backend/app/weights/rdd_india.onnx (tracked) and is copied to
+# dashboard/public/weights/rdd_web.onnx at vite dev/build time.
+/yolov8n.pt
+/yolov8m.pt
+/*.pt
+/*.onnx
+/weights/
+# NOTE: no bare `weights/` here — backend/app/weights/rdd_india.onnx is the
+# tracked deploy artifact, dashboard/public/weights/*.onnx stays ignored above.
+# ---- local-only: never needed to run or deploy the project ----
+opencode.json
+client-audit/
+storage/backups/
+# Keep the deployment ONNX + docs tracked even though they sit under weights/.
+!backend/app/weights/rdd_india.onnx
+!backend/app/weights/README.md
+!backend/app/weights/.gitkeep
 

@@ -8,7 +8,7 @@ import ConfirmationStrip from "../components/ConfirmationStrip.jsx";
 import CorridorMap from "../components/CorridorMap.jsx";
 import EvidenceStill from "../components/EvidenceStill.jsx";
 import { useUi } from "../i18n.jsx";
-import { canRevealPlate, delhiZone, dualHonesty, maskPlate, patrolLabel, uniqueSources } from "../honesty.js";
+import { canRevealPlate, delhiZone, dualHonesty, maskPlate, patrolLabel, uniqueSources, deskBucket } from "../honesty.js";
 
 function fmtTime(ts) {
   try { return new Date(ts).toLocaleTimeString("en-GB", { hour12: false }); }
@@ -107,7 +107,7 @@ export default function EventDetail() {
       <div className="print-only incident-pack-head">
         <h1>SadakSaarthi incident pack</h1>
         <p>ASSISTS AUTHORITIES — DOES NOT ACCUSE</p>
-        <p>{ev.public_code} · {ev.event_type} · {ev.status}</p>
+        <p>{ev.public_code} · {ev.event_type} · {ev.status} · {deskBucket(ev)}</p>
       </div>
       <div className="case-head no-print">
         <div>

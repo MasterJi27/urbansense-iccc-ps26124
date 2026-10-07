@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, getToken } from "../api";
+import { api, getToken, API } from "../api";
 import HonestyChip from "../components/HonestyChip.jsx";
 import { useUi } from "../i18n.jsx";
 import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
@@ -181,29 +181,17 @@ export default function Events() {
     }
   }
 
-  function exportCsv() {
-    const esc = (v) => {
-      const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = ["code,type,severity,status,obs,sources,score,updated"];
-    for (const e of filtered) {
-      lines.push([
-        e.public_code,
-        e.event_type,
-        e.severity,
-        e.status,
-        e.observation_count ?? "",
-        e.source_count ?? "",
-        e.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : "",
-        e.updated_at || "",
-      ].map(esc).join(","));
+  async function exportCsv() {
+    const res = await fetch(`${API}/events/export.csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) {
+      setErr("CSV download failed");
+      return;
     }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "events.csv";
+    a.download = "sadaksaarthi-events.csv";
     document.body.appendChild(a);
     a.click();
     a.remove();

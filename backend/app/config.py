@@ -21,6 +21,10 @@ class Settings(BaseSettings):
 
     evidence_dir: str = "../storage/evidence"
     public_base_url: str = "http://localhost:8000"
+    officer_sms_webhook: str = ""
+    demo_corridor_lat: float = 28.6328
+    demo_corridor_lon: float = 77.2195
+    demo_corridor_radius_m: float = 0
 
     dpdp_retention_days: int = 30
 

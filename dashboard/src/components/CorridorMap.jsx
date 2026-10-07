@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer } from "react-leaflet";
+import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { API, api } from "../api";
 
 const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -28,6 +28,24 @@ export function CorridorTiles() {
   const tiles = useCorridorTiles();
   if (!tiles.ready) return null;
   return <TileLayer key={tiles.url} url={tiles.url} attribution={tiles.attribution} />;
+}
+
+function InvalidateOnResize() {
+  const map = useMap();
+  useEffect(() => {
+    const node = map.getContainer();
+    const fit = () => map.invalidateSize({ animate: false });
+    const timer = window.setTimeout(fit, 80);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(node);
+    window.addEventListener("resize", fit);
+    return () => {
+      window.clearTimeout(timer);
+      observer?.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, [map]);
+  return null;
 }
 
 export default function CorridorMap({
@@ -61,6 +79,7 @@ export default function CorridorMap({
         scrollWheelZoom={scrollWheelZoom}
         zoomControl={zoomControl}
       >
+        <InvalidateOnResize />
         <TileLayer key={tiles.url} url={tiles.url} attribution={tiles.attribution} />
         {children}
       </MapContainer>

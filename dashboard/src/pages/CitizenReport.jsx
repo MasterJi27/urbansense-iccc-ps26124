@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useUi } from "../i18n.jsx";
 
@@ -100,13 +99,13 @@ export default function CitizenReport() {
             {tickets.map((row) => (
               <li key={row.id}>
                 <b className="mono">{row.public_code}</b>
-                <span>{row.event_type} · {row.status}</span>
+                <span>{row.public_status || row.status}</span>
                 <span className="muted">{row.extra?.department_desk}</span>
               </li>
             ))}
           </ul>
         )}
-        <p className="muted" style={{ fontSize: 12 }}><Link to="/login">ICCC officers sign in here</Link> · ASSISTS AUTHORITIES — DOES NOT ACCUSE</p>
+        <p className="muted" style={{ fontSize: 12 }}>This page is only your tickets. It is not the ICCC desk.</p>
       </section>
     </div>
   );

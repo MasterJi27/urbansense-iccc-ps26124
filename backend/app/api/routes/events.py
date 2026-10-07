@@ -1,4 +1,8 @@
+import csv
+import io
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -81,6 +85,39 @@ def list_events(
         if len(out) >= limit:
             break
     return out
+
+
+@router.get("/events/export.csv")
+def export_events_csv(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_iccc),
+):
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["code", "type", "severity", "status", "patrol", "lat", "lon", "buses", "updated", "honesty"])
+    q = db.query(UrbanEvent).order_by(UrbanEvent.updated_at.desc()).limit(500)
+    for row in q.all():
+        extra = row.extra if isinstance(row.extra, dict) else {}
+        if extra.get("payload_kind") == "SEED" or row.simulated:
+            continue
+        buses = extra.get("confirming_sources") or []
+        writer.writerow([
+            row.public_code,
+            row.event_type.value if hasattr(row.event_type, "value") else row.event_type,
+            row.severity.value if hasattr(row.severity, "value") else row.severity,
+            row.status.value if hasattr(row.status, "value") else row.status,
+            extra.get("patrol_state") or "",
+            row.latitude,
+            row.longitude,
+            " ".join(str(b) for b in buses),
+            row.updated_at.isoformat() if row.updated_at else "",
+            extra.get("ai_status") or "",
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sadaksaarthi-events.csv"},
+    )
 
 
 @router.post("/events/batch-delete")

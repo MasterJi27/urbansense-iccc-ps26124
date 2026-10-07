@@ -19,6 +19,17 @@ from app.services.rate_limit import client_ip, enforce
 router = APIRouter(tags=["citizen"])
 
 
+def _public_status(event: UrbanEvent) -> str:
+    extra = event.extra if isinstance(event.extra, dict) else {}
+    state = extra.get("patrol_state") or ""
+    status = event.status.value if event.status else ""
+    if state == "REPAIR_VERIFIED" or status in {"RESOLVED", "COMPLETED"}:
+        return "repaired"
+    if state == "FLEET_CONFIRMED":
+        return "confirmed"
+    return "waiting"
+
+
 @router.post("/citizen/report")
 def citizen_report(body: CitizenReportIn, request: Request, db: Session = Depends(get_db)):
     enforce(f"citizen:{client_ip(request)}", limit=12, window_s=600)
@@ -109,6 +120,7 @@ def citizen_tickets(db: Session = Depends(get_db), claim: str = Query(min_length
             "event_type": event.event_type.value if event.event_type else None,
             "severity": event.severity.value if event.severity else None,
             "status": event.status.value if event.status else None,
+            "public_status": _public_status(event),
             "latitude": event.latitude,
             "longitude": event.longitude,
             "created_at": event.created_at,

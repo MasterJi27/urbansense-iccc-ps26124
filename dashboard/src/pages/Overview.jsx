@@ -9,7 +9,7 @@ import ConfirmationStrip from "../components/ConfirmationStrip.jsx";
 import FieldBoothCard from "../components/FieldBoothCard.jsx";
 import LiveFeed from "../components/LiveFeed.jsx";
 import { useUi } from "../i18n.jsx";
-import { dualHonesty, isMonsoon, isVru, patrolLabel } from "../honesty.js";
+import { dualHonesty, isMonsoon, isVru, patrolLabel, deskBucket } from "../honesty.js";
 import { applyEventMessage, mergeEventPoll, mergeLiveSensor, mergeSensorPoll, openAuthedSocket, pollJson } from "../live/deskLive.js";
 
 const color = { CRITICAL: "#e5484d", HIGH: "#ef7a18", MEDIUM: "#b7790f", LOW: "#0bb98a" };
@@ -163,75 +163,6 @@ export default function Overview() {
       <ConfirmationStrip event={fused} ledger={heroLedger} />
 
       <div className="overview-desk">
-        <div className="overview-desk-main">
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <h4 style={{ margin: 0 }}>{t("needsAttention")} <span className="table-num muted">{attentionTotal}</span></h4>
-              <Link to="/events" className="muted overview-quiet-link">{t("viewAll")}</Link>
-            </div>
-            {needsAttention.length === 0 ? (
-              <div className="empty">All clear — no CRITICAL/HIGH unverified.</div>
-            ) : (
-              <div aria-live="polite" style={{ display: "grid" }}>
-                {needsAttention.map((e) => (
-                  <div className="stat-row" key={e.id}>
-                    <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
-                      <span className={`badge ${e.severity}`}>{e.severity}</span>
-                      <Link className="evlink" to={`/events/${e.id}`}>{e.public_code}</Link>
-                      <span className="muted overview-quiet-meta">{e.event_type}</span>
-                      <HonestyChip event={e} compact />
-                      <span className="muted table-num overview-quiet-meta">{timeAgo(e.timestamp || e.created_at || e.updated_at)}</span>
-                    </span>
-                    <Link to={`/events/${e.id}`} className="muted overview-quiet-link">Open</Link>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="kpis">
-            <div className="kpi-card">
-              <div className="kpi-top"><small>{t("activeBuses")}</small></div>
-              <b className="table-num">{sum.active_buses}</b>
-              <div className="delta"><span className="status-dot on" aria-hidden="true" /> {sensors.filter(s=>s.camera_status==="ONLINE").length} {t("camerasOnline")}</div>
-            </div>
-            <div className={`kpi-card ${sum.critical_events > 0 ? "crit" : ""}`}>
-              <div className="kpi-top"><small>{t("openEventsKpi")}</small></div>
-              <b className="table-num">{sum.total_events}</b>
-              <div className="delta">{sum.unverified_events} {t("unverified")} • {sum.critical_events} {t("CRITICAL")}/{t("HIGH")}</div>
-            </div>
-            <div className={`kpi-card ${sum.road_health < 60 ? "warn" : ""}`}>
-              <div className="kpi-top"><small>{t("roadHealthKpi")}</small></div>
-              <b className="table-num">{sum.road_health}<span className="muted overview-kpi-unit">/100</span></b>
-              <div className="delta">{t("ruleBased")}</div>
-            </div>
-            <div className="kpi-card">
-              <div className="kpi-top"><small>{t("aiReal")}</small></div>
-              <b className="table-num">{realEngines ?? "—"}</b>
-              <div className="delta">YOLO RDD + Vehicles/Track + ANPR</div>
-            </div>
-          </div>
-
-          <div className="card">
-            <h4>Latest fused event</h4>
-            {fused ? (
-              <div>
-                <Link className="evlink" to={`/events/${fused.id}`}>{fused.public_code}</Link>
-                <span className="muted"> · {fused.event_type} · {patrolLabel(fused)} · {fused.observation_count} observations</span>
-                <p className="muted overview-fusion-reason">{fused.fusion_reason}</p>
-              </div>
-            ) : (
-              <p className="muted">No live ticket yet. Arm a PIN, open /field, keep AUTO on.</p>
-            )}
-          </div>
-          <div className="card" style={{ marginTop: 12 }}>
-            <h4>{t("workQueue")}</h4>
-            <div className="stat-row"><span className="muted">{t("openWo")}</span><b className="table-num">{sum.open_work_orders}</b></div>
-            <div className="stat-row"><span className="muted">{t("needsVerify")}</span><b className="table-num">{sum.unverified_events}</b></div>
-            <Link to="/work-orders" className="btn ghost" style={{ marginTop: 10 }}>{t("workOrders")}</Link>
-          </div>
-        </div>
-
         <aside className="overview-desk-map maprail" aria-label="Corridor map">
           <div className="overview-map-head">
             <h4 style={{ margin: 0 }}>Map · {tiles.caption}</h4>
@@ -265,6 +196,77 @@ export default function Overview() {
             </CorridorMap>
           </div>
         </aside>
+
+        <div className="overview-desk-main">
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <h4 style={{ margin: 0 }}>{t("needsAttention")} <span className="table-num muted">{attentionTotal}</span></h4>
+              <Link to="/events" className="muted overview-quiet-link">{t("viewAll")}</Link>
+            </div>
+            {needsAttention.length === 0 ? (
+              <div className="empty">All clear — no CRITICAL/HIGH unverified.</div>
+            ) : (
+              <div aria-live="polite" style={{ display: "grid" }}>
+                {needsAttention.map((e) => (
+                  <div className="stat-row" key={e.id}>
+                    <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+                      <span className={`badge ${e.severity}`}>{e.severity}</span>
+                      <Link className="evlink" to={`/events/${e.id}`}>{e.public_code}</Link>
+                      <span className="muted overview-quiet-meta">{e.event_type}</span>
+                      <HonestyChip event={e} compact />
+                      <span className="muted table-num overview-quiet-meta">{timeAgo(e.timestamp || e.created_at || e.updated_at)}</span>
+                    </span>
+                    <Link to={`/events/${e.id}`} className="muted overview-quiet-link">Open</Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="kpis overview-desk-kpis">
+            <div className="kpi-card">
+              <div className="kpi-top"><small>{t("activeBuses")}</small></div>
+              <b className="table-num">{sum.active_buses}</b>
+              <div className="delta"><span className="status-dot on" aria-hidden="true" /> {sensors.filter(s=>s.camera_status==="ONLINE").length} {t("camerasOnline")}</div>
+            </div>
+            <div className={`kpi-card ${sum.critical_events > 0 ? "crit" : ""}`}>
+              <div className="kpi-top"><small>{t("openEventsKpi")}</small></div>
+              <b className="table-num">{sum.total_events}</b>
+              <div className="delta">{sum.unverified_events} {t("unverified")} • {sum.critical_events} {t("CRITICAL")}/{t("HIGH")}</div>
+            </div>
+            <div className={`kpi-card ${sum.road_health < 60 ? "warn" : ""}`}>
+              <div className="kpi-top"><small>{t("roadHealthKpi")}</small></div>
+              <b className="table-num">{sum.road_health}<span className="muted overview-kpi-unit">/100</span></b>
+              <div className="delta">{t("ruleBased")}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-top"><small>{t("aiReal")}</small></div>
+              <b className="table-num">{realEngines ?? "—"}</b>
+              <div className="delta">YOLO RDD + Vehicles/Track + ANPR</div>
+            </div>
+          </div>
+
+          <div className="card">
+            <h4>Latest fused event</h4>
+            {fused ? (
+              <div>
+                <Link className="evlink" to={`/events/${fused.id}`}>{fused.public_code}</Link>
+                <span className="tag rule">{deskBucket(fused)}</span>
+                <span className="muted"> · {fused.event_type} · {patrolLabel(fused)} · {fused.observation_count} observations</span>
+                <p className="muted overview-fusion-reason">{fused.fusion_reason}</p>
+              </div>
+            ) : (
+              <p className="muted">No live ticket yet. Arm a PIN, open /field, keep AUTO on.</p>
+            )}
+          </div>
+          <div className="card" style={{ marginTop: 12 }}>
+            <h4>{t("workQueue")}</h4>
+            <div className="stat-row"><span className="muted">{t("openWo")}</span><b className="table-num">{sum.open_work_orders}</b></div>
+            <div className="stat-row"><span className="muted">{t("needsVerify")}</span><b className="table-num">{sum.unverified_events}</b></div>
+            <Link to="/work-orders" className="btn ghost" style={{ marginTop: 10 }}>{t("workOrders")}</Link>
+            <Link to="/analytics" className="muted overview-quiet-link" style={{ display: "inline-block", marginTop: 10, marginLeft: 12 }}>{t("analytics")} →</Link>
+          </div>
+        </div>
       </div>
 
       <LiveFeed sensors={sensors} />

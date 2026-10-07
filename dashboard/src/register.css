@@ -1196,16 +1196,14 @@ html[lang="hi"] .login-register .login-brand h1 {
   color: var(--text);
 }
 
-/* Overview: map as a side pane (ops-grid never loaded, so the map was a full-width strip). */
+/* Overview: big map top-left, KPIs / attention on the right. */
 .overview-desk {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.85fr);
   gap: 14px;
   align-items: start;
 }
 .overview-desk-map {
-  position: sticky;
-  top: 10px;
   min-width: 0;
 }
 .overview-map-head {
@@ -1213,13 +1211,16 @@ html[lang="hi"] .login-register .login-brand h1 {
   border-bottom: 1px solid var(--line);
 }
 .overview-map-frame {
-  height: min(52vh, 480px);
-  min-height: 360px;
+  height: min(64vh, 560px);
+  min-height: 420px;
 }
 .overview-map-frame .corridor-map,
 .overview-desk-map.maprail .leaflet-container {
   height: 100%;
   width: 100%;
+}
+.overview-desk-kpis {
+  grid-template-columns: 1fr 1fr;
 }
 .overview-quiet-link {
   font-size: 13px;
@@ -1303,7 +1304,11 @@ html[lang="hi"] .login-register .login-brand h1 {
     font-size: 14px;
   }
   .overview-desk {
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.8fr);
+  }
+  .overview-map-frame {
+    height: min(68vh, 600px);
+    min-height: 460px;
   }
 }
 
@@ -1315,7 +1320,10 @@ html[lang="hi"] .login-register .login-brand h1 {
     position: static;
   }
   .overview-map-frame {
-    height: 240px;
-    min-height: 220px;
+    height: 280px;
+    min-height: 240px;
+  }
+  .overview-desk-kpis {
+    grid-template-columns: 1fr 1fr;
   }
 }

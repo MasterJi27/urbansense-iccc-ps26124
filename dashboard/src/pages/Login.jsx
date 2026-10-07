@@ -13,7 +13,7 @@ export default function Login() {
   const [params] = useSearchParams();
   const { t, lang, toggleLang } = useUi();
   const [email, setEmail] = useState("admin@urbansense.local");
-  const [password, setPassword] = useState("UrbanSense@2026");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   async function submit(e) {

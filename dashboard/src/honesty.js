@@ -122,6 +122,13 @@ export function patrolLabel(ev) {
   return "First sighting — waiting for another bus";
 }
 
+export function deskBucket(ev) {
+  const state = ev?.extra?.patrol_state;
+  if (state === "EXPIRED") return "EXPIRE";
+  if (state === "FLEET_CONFIRMED" || state === "REPAIR_VERIFIED") return "DISPATCH";
+  return "WATCH";
+}
+
 export function repeatConfirm(ev) {
   const buses = uniqueSources(ev);
   const obs = ev?.observation_count ?? buses.length;

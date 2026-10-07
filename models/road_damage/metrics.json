@@ -2,12 +2,12 @@
   "honesty": "REAL",
   "evaluated": true,
   "dataset": "RDD2022 India (CRDDC) \u2014 this host",
-  "note": "Held-out test after India RDD fine-tune (lr0=0.001, freeze=10). Dataset is RDD2022 India (Delhi / Gurugram / Haryana). Twitter/Reddit comments were not used \u2014 they are unlabeled. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours.",
-  "map50": 0.6189,
-  "map50_95": 0.2924,
+  "note": "Held-out test after India RDD fine-tune (lr0=0.0001, freeze=10). Dataset is RDD2022 India (Delhi / Gurugram / Haryana). Twitter/Reddit comments were not used \u2014 they are unlabeled. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours. Train extras are Japan, Czech, United States, and China MotorBike from the official RDD2022 zip. India val and test stay frozen. Norway and China Drone were not mixed: Norway is a different climate and the drone view is not a bus windshield.",
+  "map50": 0.6244,
+  "map50_95": 0.3196,
   "eval_split": "test",
   "split": {
-    "train": 2983,
+    "train": 16345,
     "val": 331,
     "test": 323,
     "seed": 42,
@@ -19,9 +19,9 @@
     ]
   },
   "recipe": {
-    "lr0": 0.001,
+    "lr0": 0.0001,
     "freeze": 10,
-    "epochs": 50,
+    "epochs": 25,
     "d10_train_repeat": 10
   },
   "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
@@ -30,30 +30,30 @@
       "id": "D00",
       "name": "Longitudinal crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.5887,
+      "map50": 0.594,
       "index": 0
     },
     {
       "id": "D10",
       "name": "Transverse crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.5365,
+      "map50": 0.5285,
       "index": 1
     },
     {
       "id": "D20",
       "name": "Alligator crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.762,
+      "map50": 0.7726,
       "index": 2
     },
     {
       "id": "D40",
       "name": "Pothole",
       "maps_to": "POTHOLE",
-      "map50": 0.5882,
+      "map50": 0.6026,
       "index": 3
     }
   ],
-  "updated_at": "2026-09-06T07:57:33.042604+00:00"
+  "updated_at": "2026-10-05T11:50:50.769421+00:00"
 }
