@@ -38,12 +38,14 @@ Every payload carries `ai_status`: **REAL** / **RULE_BASED** / **SEED** / **SIMU
 
 | Piece | Label | What it actually is |
 | --- | --- | --- |
-| Official road-damage ticket | REAL | Azure App Service still → YOLOv8s 640 ONNX **CPU**, India RDD D00/D10/D20/D40, conf 0.22 |
+| Official road-damage ticket | REAL | Azure App Service still → YOLOv8s 640 ONNX **CPU**, India RDD D00/D10/D20/D40, conf 0.18 |
 | Phone windshield boxes | RULE_BASED preview | On-device 640 India RDD (`rdd_web.onnx`). Road-band + full-frame merge + IoU tracker. Same weights, not a new test mAP |
-| Held-out test mAP@0.5 | 0.6189 | 323-image India RDD test split on this host. D10 has 6 boxes (noisy). Not certified field accuracy |
+| Held-out test mAP@0.5 | 0.6244 | 323-image India RDD test split on this host (train 16345: India + Japan/Czech/US/China-MotorBike extras, India val/test frozen; lr0 0.0001, 25 epochs). D10 is noisy. Not certified field accuracy |
 | Live desk ticks | REAL transport | Phone `/ws/field-live` → ICCC `/ws/live` plus REST poll. Round-trip is tens of ms, **not 1 ms** |
 | Fleet confirm / absence expire | RULE_BASED | Second independent bus in 40 m / 6 h. Same bus cannot self-confirm |
+| Phone still gates | RULE_BASED | GPS accuracy worse than 25 m → `400`; outside the jury corridor (when set) → `400`; speed-breaker asset within 25 m → `409`, no pothole ticket |
 | Officer email | DISABLED until Gmail is connected | Composio mails only on `FLEET_CONFIRMED`. It is not a detector |
+| Officer SMS webhook | REAL when `OFFICER_SMS_WEBHOOK` is set, else DISABLED | Plain POST `{"text","event_id"}` on `FLEET_CONFIRMED`, independent of Gmail. Empty URL = off, ticket still saves |
 | App Service GPU | none | Linux App Service has no CUDA. Overlay is WASM (WebGPU only if ONNX Runtime attaches). Official still stays CPU unless a separate T4 host is added |
 | Indian MoRTH signs | DISABLED | GIS missing-sign geofence only |
 | Waterlogging net | SIMULATED | No flood model |
@@ -125,6 +127,8 @@ copy ..\.env.example .env
 
 OpenAPI: http://127.0.0.1:8000/docs · Health: http://127.0.0.1:8000/health (`rdd` should be `REAL` when `backend/app/weights/rdd_india.onnx` is present).
 
+No training needed on a fresh clone: the deploy ONNX (`backend/app/weights/rdd_india.onnx`, YOLOv8s 640 CPU) and the honesty `metrics.json` files are tracked in git. Training weights (`models/**/*.pt`, `runs/`, `.data/`) are gitignored — see [models/README.md](models/README.md) to reproduce them.
+
 If Docker Desktop is running:
 
 ```bash
@@ -193,10 +197,17 @@ A GPU sidecar (Container Apps T4) is **not** in this stack. App Service cannot g
 - Deterministic spatial-temporal fusion (40 m / 6 h, source diversity; not averaged confidence)
 - JWT + roles: SUPER_ADMIN, ADMIN, INSPECTOR, OPERATOR; field PIN scope
 - Phone overlay → live desk boxes; Azure still → official event
+- Still gates: GPS-accuracy, jury-corridor, and speed-breaker checks before a ticket is filed
+- Repair loop: work order → `RE_VERIFICATION` → next bus in 40 m is asked for a verify still (`GET /ingest/repair-due`)
+- Citizen desk: report without login, claim-token tickets with `waiting` / `confirmed` / `repaired`
+- ICCC export: `GET /events/export.csv` (field tickets only, seed rows skipped)
+- Field outbox: queued stills retry from `localStorage` when the network drops
+- Demo passwords (`UrbanSense@2026`) work only with `APP_ENV=development`
 - Assets (digital passport) + QR lookup
 - Work orders + repair verification
 - Sensor heartbeats (`POST /sensor-nodes/heartbeat`)
 - Offline-first Flutter queue (JSON file) when the native app is used
+- Local backup: `scripts\backup-db.ps1` (pg_dump for Postgres, file copy for SQLite)
 - Demo seed: buses including BUS-042 / BUS-017, events, assets, work orders
 - Privacy: restricted evidence flags, masked plates, audit logs (blur pipeline is **planned**)
 
@@ -227,7 +238,7 @@ mobile/      Flutter (same /field booth in a WebView)
 ai/          Local camera / RTSP helpers — not App Service GPU
 infra/       Azure Bicep
 docs/        Jury script + PS coverage
-scripts/     package-dashboard, ship-ui, local demo
+scripts/     package-dashboard, ship-ui, backup-db, train/export weights, local demo
 shared/      Cross-client schemas
 ```
 
@@ -240,8 +251,10 @@ shared/      Cross-client schemas
 | POST | `/auth/login` `/auth/field-booth` `/auth/field-join` |
 | GET | `/health` `/ai/capabilities` `/weights/manifest.json` |
 | GET/POST | `/sensor-nodes` `/sensor-nodes/heartbeat` |
-| POST | `/ingest/phone` `/ingest/phone/probe` |
-| GET | `/events` `/events/{id}` `/sensor-nodes` |
+| POST | `/ingest/phone/still` (official still) `/ingest/phone/probe` (pre-check, no ticket) |
+| GET | `/ingest/repair-due` (verify-still prompt inside 40 m of a repaired cell) |
+| GET | `/events` `/events/{id}` `/events/export.csv` (field CSV, seed rows skipped) |
+| POST | `/citizen/report` (no login) · GET `/citizen/tickets?claim=…` (`waiting`/`confirmed`/`repaired`) |
 | POST | `/events/{id}/verify` `/work-orders` … |
 | WS | `/ws/events` `/ws/live` (ICCC) · `/ws/field-live` (phone, field JWT) |
 
@@ -256,8 +269,10 @@ shared/      Cross-client schemas
 | Azure RDD still (YOLOv8s 640 CPU) | IMPLEMENTED (REAL) |
 | Independent-bus confirm + absence expire | IMPLEMENTED (RULE_BASED) |
 | Work order + repair verify/reopen | IMPLEMENTED |
+| Still gates + repair-due prompt + events CSV + citizen claim tickets | IMPLEMENTED (RULE_BASED) |
 | Azure App Service (API + dashboard) | IMPLEMENTED |
 | Composio officer mail | DISABLED until Gmail OAuth + `COMPOSIO_NOTIFY_TO` |
+| Officer SMS webhook | REAL when `OFFICER_SMS_WEBHOOK` is set, else DISABLED (fires only on `FLEET_CONFIRMED`) |
 | App Service GPU / live RTSP on Azure | NOT AVAILABLE (by platform) |
 | Face/plate blur vision | FUTURE (flags + audit only) |
 | Indian sign classifier | DISABLED |
@@ -271,7 +286,7 @@ shared/      Cross-client schemas
 - Linux App Service has no GPU. Faster stills need a separate T4 host, not a plan SKU bump.
 - SQLite fallback has no PostGIS GIST indexes (haversine still runs).
 - Route delay charts use seeded durations when trips have no AVL.
-- Default passwords and `SECRET_KEY` are for the jury host only. Never commit `.env` or API keys.
+- Default passwords and `SECRET_KEY` are for the jury host only. Seeded demo passwords are refused with `APP_ENV=production`. Never commit `.env` or API keys.
 
 ## License
 
