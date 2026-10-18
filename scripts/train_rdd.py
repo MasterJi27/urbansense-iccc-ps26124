@@ -5,6 +5,15 @@ it exits with EXPERIMENTAL / evaluated=false. Classes stay D00/D10/D20/D40.
 
   python scripts/train_rdd.py --data path/to/rdd_india.yaml --epochs 50
 
+Evaluation protocol (see models/road_damage/EVAL.md):
+  * Promotion is decided on the VAL split only: the candidate's val mAP50 must reach the
+    currently shipped weights' val mAP50 (re-measured now, on the same val images) plus
+    --promote-margin.
+  * The TEST split is evaluated once, on the promoted weights, after the decision. A rejected
+    candidate is never scored on test. Test never influences promotion.
+  * --field-data adds a never-trained-on hand-labelled windshield set as one more final number.
+  * data.yaml 'path:' is rewritten to the real folder at run time (the yaml on disk stays as is).
+
 Dataset: https://doi.org/10.6084/m9.figshare.21431547 (RDD2022 / CRDDC).
 """
 
@@ -15,6 +24,8 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # so `import eval_rdd` works from any cwd
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "models" / "road_damage"
@@ -34,12 +45,18 @@ try:
 except ImportError:
     YOLO = None  # type: ignore[assignment]
 
+try:
+    import eval_rdd
+except ImportError:  # numpy missing: skip() below reports it like a missing ultralytics
+    eval_rdd = None  # type: ignore[assignment]
+
 CLASS_MAP = [
     {"id": "D00", "name": "Longitudinal crack", "maps_to": "ROAD_DAMAGE"},
     {"id": "D10", "name": "Transverse crack", "maps_to": "ROAD_DAMAGE"},
     {"id": "D20", "name": "Alligator crack", "maps_to": "ROAD_DAMAGE"},
     {"id": "D40", "name": "Pothole", "maps_to": "POTHOLE"},
 ]
+MIN_TEST_IMAGES = 20
 
 
 def write_metrics(payload: dict) -> None:
@@ -51,47 +68,24 @@ def write_metrics(payload: dict) -> None:
     print(f"wrote {METRICS}")
 
 
-def _count_split(data: Path, split: str) -> int:
-    root = data.parent
-    folder = root / "images" / split
-    if not folder.is_dir():
+def _count_split(cfg: dict, split: str) -> int:
+    try:
+        return len(eval_rdd.split_images(cfg, split))
+    except SystemExit:
         return 0
-    return sum(1 for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
-
-
-def _eval_split(data: Path) -> str:
-    return "test" if _count_split(data, "test") >= 20 else "val"
 
 
 def _cuda() -> bool:
     return bool(torch is not None and torch.cuda.is_available())
 
 
-def _per_class(box) -> dict[int, float]:
-    """Per-class AP@0.5. Ultralytics box.maps is AP@0.5:0.95 — do not label that as map50."""
-    out: dict[int, float] = {}
-    if box is None:
-        return out
-    ap50 = getattr(box, "ap50", None)
-    idx = getattr(box, "ap_class_index", None)
-    if ap50 is None:
-        return out
+def _split_info(cfg: dict) -> dict:
+    """split_info.json written by prepare_rdd_india.py; {} for datasets built before it existed."""
+    path = Path(str(cfg.get("path") or ".")) / "split_info.json"
     try:
-        values = [float(x) for x in list(ap50)]
-    except Exception:
-        return out
-    if idx is None:
-        for i, value in enumerate(values[:4]):
-            out[i] = round(value, 4)
-        return out
-    try:
-        indexes = [int(x) for x in list(idx)]
-    except Exception:
-        return out
-    for i, cls in enumerate(indexes):
-        if i < len(values):
-            out[int(cls)] = round(values[i], 4)
-    return out
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def skip(reason: str) -> int:
@@ -109,6 +103,85 @@ def skip(reason: str) -> int:
     return 2
 
 
+# --------------------------------------------------------------------------------------
+# Optional class-balanced sampling (replaces duplicating D10 image files on disk)
+# --------------------------------------------------------------------------------------
+def repeat_factor_weights(labels: list[dict], nc: int, thresh: float):
+    """Per-image sampling weights by repeat-factor sampling (LVIS, Gupta et al. 2019).
+
+    f_c = fraction of images containing class c; r_c = max(1, sqrt(thresh / f_c));
+    an image's weight is the largest r_c among its classes (background images get 1).
+    Rare classes are drawn more often per epoch without copying a single file.
+    """
+    import numpy as np
+
+    present = np.zeros((len(labels), nc), dtype=bool)
+    for i, lab in enumerate(labels):
+        cls = np.asarray(lab["cls"]).reshape(-1).astype(int)
+        present[i, cls[(cls >= 0) & (cls < nc)]] = True
+    freq = present.mean(0)
+    r_c = np.where(freq > 0, np.maximum(1.0, np.sqrt(thresh / np.maximum(freq, 1e-9))), 1.0)
+    return np.where(present, r_c[None, :], 1.0).max(1)
+
+
+def make_balanced_trainer(thresh: float):
+    """DetectionTrainer whose train loader draws images with repeat-factor weights."""
+    from torch.utils.data import WeightedRandomSampler
+    from ultralytics.data.build import InfiniteDataLoader
+    from ultralytics.models.yolo.detect import DetectionTrainer
+
+    class BalancedTrainer(DetectionTrainer):
+        def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
+            loader = super().get_dataloader(dataset_path, batch_size, rank, mode)
+            if mode != "train" or rank != -1:  # DDP keeps its DistributedSampler
+                return loader
+            ds = loader.dataset
+            weights = repeat_factor_weights(ds.labels, int(self.data["nc"]), thresh)
+            print(f"[class-balanced] repeat-factor sampling, thresh={thresh}: mean weight {weights.mean():.3f}, max {weights.max():.3f} over {len(weights)} images")
+            sampler = WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double), num_samples=len(ds), replacement=True)
+            return InfiniteDataLoader(
+                dataset=ds,
+                batch_size=loader.batch_size,
+                shuffle=False,
+                num_workers=loader.num_workers,
+                sampler=sampler,
+                prefetch_factor=loader.prefetch_factor,
+                pin_memory=loader.pin_memory,
+                collate_fn=loader.collate_fn,
+                worker_init_fn=loader.worker_init_fn,
+                generator=loader.generator,
+                drop_last=loader.drop_last,
+            )
+
+    return BalancedTrainer
+
+
+def _eval_summary(payload: dict, names: list[str]) -> dict:
+    """map50 / map50_95 / per-class AP50 / CI out of an eval_rdd payload. model.val() numbers are the
+    headline (same definition train_rdd.py always used); the CI comes from the bootstrap pipeline."""
+    uv = payload.get("ultralytics_val") or {}
+    own = payload["own"]
+    ci = payload.get("bootstrap", {}).get("metrics", {})
+    per = {}
+    for name in names:
+        value = (uv.get("per_class_ap50") or {}).get(name)
+        per[name] = value if value is not None else own["per_class"][name]["ap50"]
+
+    def span(key: str):
+        entry = ci.get(key) or {}
+        return [entry["lo"], entry["hi"]] if entry.get("lo") is not None else None
+
+    return {
+        "map50": uv.get("map50") if uv.get("map50") is not None else own["map50"],
+        "map50_95": uv.get("map50_95") if uv.get("map50_95") is not None else own["map50_95"],
+        "per_class_ap50": per,
+        "ci95": {"map50": span("map50"), "map50_95": span("map50_95")},
+        "operating_point": own["operating_point"],
+        "n_images": payload["n_images"],
+        "eval_json": None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Honest RDD2022 India fine-tune")
     parser.add_argument("--data", help="Ultralytics data yaml (train/val + names D00 D10 D20 D40)")
@@ -117,7 +190,7 @@ def main() -> int:
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--model", default=str(WEIGHTS) if WEIGHTS.is_file() else "yolov8s.pt")
     parser.add_argument("--device", default="")
-    parser.add_argument("--eval-only", action="store_true", help="Val existing weights; do not train")
+    parser.add_argument("--eval-only", action="store_true", help="Do not train; gate and score --model (default: re-measure the shipped India weights)")
     parser.add_argument("--lr0", type=float, default=0.001)
     parser.add_argument("--optimizer", default="SGD", help="SGD keeps lr0. auto ignores it.")
     parser.add_argument("--freeze", type=int, default=10)
@@ -134,6 +207,16 @@ def main() -> int:
         default="",
         help="Appended to metrics.json note (Hugging Face mix, extra countries, …).",
     )
+    parser.add_argument("--promote-margin", type=float, default=0.0, help="candidate val mAP50 must beat the shipped weights' val mAP50 by this much")
+    parser.add_argument("--skip-test", action="store_true", help="never touch the test split in this run")
+    parser.add_argument("--boot", type=int, default=1000, help="bootstrap resamples for the final test CI (0 = off)")
+    parser.add_argument("--field-data", help="data_field.yaml from prepare_rdd_india.py --field-test-dir; scored once at the end")
+    parser.add_argument(
+        "--class-balanced",
+        action="store_true",
+        help="repeat-factor sampler: rare classes (D10) drawn more often. Replaces duplicating D10 files on disk.",
+    )
+    parser.add_argument("--rfs-thresh", type=float, default=0.5, help="repeat-factor threshold; classes in fewer than this fraction of images are oversampled")
     args = parser.parse_args()
     if not args.data and INDIA_YAML.is_file():
         args.data = str(INDIA_YAML)
@@ -144,18 +227,18 @@ def main() -> int:
         return skip(f"data yaml missing: {data}")
     if YOLO is None:
         return skip("ultralytics is not installed. pip install ultralytics in the training env.")
+    if eval_rdd is None:
+        return skip("scripts/eval_rdd.py could not be imported (numpy / pyyaml missing in this env).")
 
     device = args.device or ("0" if _cuda() else "cpu")
-    prev_map = None
-    if METRICS.is_file():
-        try:
-            prev_map = json.loads(METRICS.read_text(encoding="utf-8")).get("map50")
-        except (OSError, json.JSONDecodeError, TypeError, AttributeError):
-            prev_map = None
+    runtime_yaml, cfg = eval_rdd.materialize_data_yaml(data)
+    names = eval_rdd.class_names(cfg)
+    n_test = _count_split(cfg, "test")
+    info = _split_info(cfg)
     model = YOLO(args.model)
     best = Path(args.model)
     train_kw: dict = {
-        "data": str(data),
+        "data": str(runtime_yaml),
         "epochs": args.epochs,
         "imgsz": args.imgsz,
         "device": device,
@@ -166,12 +249,15 @@ def main() -> int:
         "lr0": args.lr0,
         "lrf": 0.01,
         "freeze": args.freeze,
+        # No-op: CopyPaste needs instance masks and returns immediately for box-only labels (see EVAL.md).
         "copy_paste": 0.2,
         "close_mosaic": args.close_mosaic,
         "project": str(OUT_DIR / "runs"),
         "name": args.name,
         "exist_ok": False,
     }
+    if args.class_balanced:
+        train_kw["trainer"] = make_balanced_trainer(args.rfs_thresh)
     if args.phone_aug:
         train_kw.update(
             hsv_h=0.015,
@@ -189,66 +275,126 @@ def main() -> int:
         best = save_dir / "weights" / "best.pt"
     elif INDIA_BEST.is_file() and not Path(args.model).is_file():
         best = INDIA_BEST
-    if best.is_file():
-        model = YOLO(str(best))
-    split_name = _eval_split(data)
-    metrics: dict = {}
-    try:
-        ev = model.val(data=str(data), imgsz=args.imgsz, device=device, split=split_name)
-        box = getattr(ev, "box", None)
-        metrics = {
-            "map50": round(float(getattr(box, "map50", 0) or 0), 4) if box is not None else None,
-            "map50_95": round(float(getattr(box, "map", 0) or 0), 4) if box is not None else None,
-        }
-        per = _per_class(box)
-    except Exception as exc:
-        return skip(f"Training finished but val failed: {exc}")
-    new_map = metrics.get("map50") or 0
-    floor = float(prev_map) if isinstance(prev_map, (int, float)) else 0.0
-    promoted = bool(best.is_file() and new_map + 1e-6 >= floor)
-    if promoted:
+    if not best.is_file():
+        return skip(f"no weights to evaluate at {best}")
+
+    # ---- 1. promotion gate: VAL only ----------------------------------------------------
+    shipped = INDIA_BEST.resolve() if INDIA_BEST.is_file() else None
+    final = INDIA_BEST  # whatever happens below, the weights that get the final numbers
+    is_shipped = shipped is not None and best.resolve() == shipped
+    val_kw = {"imgsz": args.imgsz, "device": device}
+    promote_info: dict = {"split": "val", "margin": args.promote_margin}
+    if not is_shipped:
+        try:
+            cand_val = eval_rdd.val_metrics(YOLO(str(best)), runtime_yaml, "val", names, **val_kw)
+            inc_val = eval_rdd.val_metrics(YOLO(str(INDIA_BEST)), runtime_yaml, "val", names, **val_kw) if shipped else None
+        except Exception as exc:
+            return skip(f"Training finished but val failed: {exc}")
+        floor = float(inc_val["map50"]) if inc_val else 0.0
+        promoted = bool(cand_val["map50"] is not None and cand_val["map50"] + 1e-6 >= floor + args.promote_margin)
+        promote_info.update(candidate_val_map50=cand_val["map50"], shipped_val_map50=inc_val["map50"] if inc_val else None, promoted=promoted)
+        if not promoted:
+            print(
+                f"kept previous India weights. candidate val map50={cand_val['map50']} did not reach "
+                f"shipped val map50={floor} + margin {args.promote_margin}. Test split was NOT evaluated.",
+                file=sys.stderr,
+            )
+            gate = OUT_DIR / "runs" / f"{args.name}_gate.json"
+            gate.parent.mkdir(parents=True, exist_ok=True)
+            gate.write_text(json.dumps({**promote_info, "candidate": str(best), "at": datetime.now(timezone.utc).isoformat()}, indent=2), encoding="utf-8")
+            return 0
         INDIA_BEST.write_bytes(best.read_bytes())
-        print(f"promoted {best} map50={new_map} (floor {floor}) -> {INDIA_BEST}")
+        print(f"promoted {best} on val: map50={cand_val['map50']} (shipped {floor}, margin {args.promote_margin}) -> {INDIA_BEST}")
     else:
-        print(
-            f"kept previous India weights. new map50={new_map} did not beat floor {floor}",
-            file=sys.stderr,
-        )
-        return 0
+        promote_info.update(promoted=None, note="re-measuring the shipped weights; no promotion decision")
+        try:
+            promote_info["candidate_val_map50"] = eval_rdd.val_metrics(YOLO(str(final)), runtime_yaml, "val", names, **val_kw)["map50"]
+        except Exception as exc:
+            return skip(f"val failed: {exc}")
+
+    # ---- 2. final numbers: test evaluated ONCE on the promoted weights ------------------
+    use_test = not args.skip_test and n_test >= MIN_TEST_IMAGES
+    split_name = "test" if use_test else "val"
+    ctx = eval_rdd.make_ctx(data, split_name, imgsz=args.imgsz, device=device, prepared=(runtime_yaml, cfg))
+    try:
+        payloads, _ = eval_rdd.evaluate_many([final], ctx, boot=args.boot)
+    except Exception as exc:
+        return skip(f"Promoted, but final {split_name} evaluation failed: {exc}")
+    summary = _eval_summary(payloads[0], names)
+    out_json = eval_rdd.default_out(final, split_name)
+    eval_rdd.write_json(out_json, payloads[0])
+    summary["eval_json"] = str(out_json)
+    eval_rdd.print_payload(payloads[0], names)
+
+    field_block = None
+    if args.field_data and not args.skip_test:
+        field_prep = eval_rdd.materialize_data_yaml(Path(args.field_data))
+        field_ctx = eval_rdd.make_ctx(Path(args.field_data), "test", imgsz=args.imgsz, device=device, prepared=field_prep)
+        field_payloads, _ = eval_rdd.evaluate_many([final], field_ctx, boot=args.boot)
+        field_block = _eval_summary(field_payloads[0], names)
+        field_out = eval_rdd.default_out(final, "field")
+        eval_rdd.write_json(field_out, field_payloads[0])
+        field_block["eval_json"] = str(field_out)
+        eval_rdd.print_payload(field_payloads[0], names)
 
     classes = []
     for i, row in enumerate(CLASS_MAP):
         item = dict(row)
-        if i in per:
-            item["map50"] = per[i]
+        if i < len(names) and summary["per_class_ap50"].get(names[i]) is not None:
+            item["map50"] = summary["per_class_ap50"][names[i]]
         item["index"] = i
         classes.append(item)
 
+    recipe = {
+        "lr0": args.lr0,
+        "freeze": args.freeze,
+        "epochs": args.epochs,
+        # None = dataset predates split_info.json (those builds duplicated D10 files 10x)
+        "d10_train_repeat": info.get("d10_train_repeat"),
+        "class_balanced": bool(args.class_balanced),
+        "rfs_thresh": args.rfs_thresh if args.class_balanced else None,
+    }
+    held_out = split_name == "test"
     write_metrics(
         {
-            "honesty": "REAL" if metrics.get("map50") else "EXPERIMENTAL",
-            "evaluated": bool(metrics.get("map50")),
+            "honesty": "REAL" if summary.get("map50") else "EXPERIMENTAL",
+            "evaluated": bool(summary.get("map50")),
             "dataset": "RDD2022 India (CRDDC) — this host",
             "note": (
-                f"Held-out {split_name} after India RDD fine-tune (lr0={args.lr0}, freeze={args.freeze}). "
+                (
+                    f"Test evaluated once, on the promoted weights; promotion was decided on val. "
+                    if held_out
+                    else "NO untouched test split in this run: these numbers are on val, which also picked the best epoch. "
+                )
+                + f"Fine-tune lr0={args.lr0}, freeze={args.freeze}. "
                 "Dataset is RDD2022 India (Delhi / Gurugram / Haryana). "
+                "The base checkpoint (oracl4 YOLOv8_Small_RDD.pt) was already trained on RDD2022 Japan and India, "
+                "so this is in-distribution accuracy, not a field estimate. "
                 "Twitter/Reddit comments were not used — they are unlabeled. "
                 "Not a certified field accuracy. Waterlogging and Indian signs were not trained. "
                 "Do not quote a rival mAP as ours."
                 + (f" {args.note_extra.strip()}" if args.note_extra.strip() else "")
             ),
-            "map50": metrics.get("map50"),
-            "map50_95": metrics.get("map50_95"),
+            "map50": summary["map50"],
+            "map50_95": summary["map50_95"],
+            "ci95": summary["ci95"],
+            "operating_point": summary["operating_point"],
             "eval_split": split_name,
+            "eval_json": summary["eval_json"],
+            "promotion": promote_info,
+            **({"field_test": field_block} if field_block else {}),
             "split": {
-                "train": _count_split(data, "train"),
-                "val": _count_split(data, "val"),
-                "test": _count_split(data, "test"),
-                "seed": 42,
+                "train": _count_split(cfg, "train"),
+                "val": _count_split(cfg, "val"),
+                "test": n_test,
+                "seed": info.get("seed", 42),
+                "mode": info.get("mode", "random"),
+                "group_size": info.get("group_size"),
+                "embargo": info.get("embargo"),
                 "keep": ["D00", "D10", "D20", "D40"],
             },
-            "recipe": {"lr0": args.lr0, "freeze": args.freeze, "epochs": args.epochs, "d10_train_repeat": 10},
-            "weights": "models/road_damage/YOLOv8s_RDD_india.pt" if INDIA_BEST.is_file() else str(best),
+            "recipe": recipe,
+            "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
             "classes": classes,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
