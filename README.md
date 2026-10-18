@@ -164,6 +164,15 @@ flutter run --dart-define=API_BASE=http://10.0.2.2:8000
 
 Windows desktop camera/GPS/IMU are often missing. Use an Android device or `/field` in the phone browser.
 
+Release APK for a phone (arm64, debug-signed, so sideload only, not the Play Store):
+
+```powershell
+.\scripts\build-apk.ps1            # -> mobile\build\apk\SadakSaarthi-<version>-arm64.apk
+.\scripts\build-apk.ps1 -LowPriority   # same, gentler on the CPU while a model is training
+```
+
+Needs the Flutter SDK at `D:\tools\flutter` (`-Flutter` to change it). The script builds a copy of `mobile/` without `windows/` and with TEMP on a short D: path, so it needs neither Developer Mode nor the default TEMP folder (see the header of the script for why). The app's `/field` WebView loads the hosted page, so republishing the website updates that part of the app with no new APK; native changes (camera, GPS, IMU, QR, offline queue) need a rebuild.
+
 ### 4. Tests
 
 ```bash

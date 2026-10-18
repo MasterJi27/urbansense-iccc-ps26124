@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:math' as math;
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:camera/camera.dart';
@@ -651,11 +652,7 @@ class _SensorHomeState extends State<SensorHome> {
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Camera unavailable'),
-              content: Text('Placeholder created:
-${placeholder.path.split(Platform.pathSeparator).last}
-$gpsTag
-
-On device this would open file picker. Using placeholder file as evidence_url.'),
+              content: Text('Placeholder created:\n${placeholder.path.split(Platform.pathSeparator).last}\n$gpsTag\n\nOn device this would open file picker. Using placeholder file as evidence_url.'),
               actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
             ),
           );

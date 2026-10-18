@@ -22,7 +22,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// PS26124 mapping: see docs/PHONE_ONLY_EDGE.md
 class EdgeService {
   static final EdgeService I = EdgeService._();
-  EdgeService._();
+  EdgeService._() : tokenProvider = null;
 
   final String Function()? tokenProvider;
   EdgeService.withToken(this.tokenProvider);
@@ -231,7 +231,7 @@ class EdgeService {
     final rms = _windowRms();
     final gyroE = _gyroEnergy();
     final now = DateTime.now();
-    final speedKmh = lastPos == null ? 0.0 : max(0, lastPos!.speed * 3.6);
+    final speedKmh = lastPos == null ? 0.0 : max(0.0, lastPos!.speed * 3.6);
     final lat = lastPos?.latitude ?? 28.6289;
     final lon = lastPos?.longitude ?? 77.2410;
     final gpsSim = lastPos == null;
