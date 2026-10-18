@@ -88,6 +88,29 @@ trained on the old random train split, which overlaps the new test. Only models 
 grouped train split get a fair grouped-test score, and even those inherit the base checkpoint's
 India exposure.
 
+### Result on the RTX box (2026-10-18): ids are shuffled, split by look-alike instead
+
+The audit said no: id-neighbours have a dHash median distance of 27 against 25 for random pairs.
+RDD2022 India ids carry no drive order, so `--split-by-group` removes nothing. The random split
+still leaks, though: of the closest val/test-to-train pairs (32x32 grey thumbnail cosine ≥ 0.98),
+most are the same spot of the same drive a few frames apart. Around 0.95 some pairs are still the
+same spot; at 0.93 they are different places. So:
+
+```powershell
+.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
+.\.venv-train\Scripts\python.exe scripts\prepare_rdd_hf.py --india-dir .data\rdd_india_simsplit --mix-dir .data\rdd_simsplit_mix
+```
+
+Images with cosine ≥ `--sim-thresh` (0.95) are linked, connected components stay in one split,
+components above 2% of the images go to train (one, 386 images), and test then val are filled to
+10% each. Result: train 2579 / val 322 / test 322, and the largest val→train, test→train and
+test→val cosine is below 0.95 by construction (`split_info.json` records it). Test holds only 4
+D10 boxes, so its D10 AP is noise. The mix adds the 13362 Japan/US/Czech/China MotorBike
+images to train; val/test stay India only.
+
+The base checkpoint saw all of these images, and the shipped weights trained on the old random
+split, so neither gets a clean score here. Only a model that starts from COCO weights does.
+
 ## 3. Field set (the only clean test)
 
 Hand-label phone/bus-windshield frames in YOLO format and keep them out of every training run.
@@ -135,6 +158,27 @@ you have the labels, it is the number to quote.
   build). `--class-balanced` could not be run on the Mac; check for the "[class-balanced]" line it
   prints at start-up.
 
+### 4b. From COCO on the look-alike split (the first clean India number)
+
+Every fine-tune from the base peaked at epoch 1-3 on India val and then fell: the base had already
+seen val, so moving away from it only loses memorised images. Training from COCO weights on the
+section 2 split avoids that:
+
+```powershell
+.\.venv-train\Scripts\python.exe scripts\train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model yolov8m.pt --epochs 120 --batch 16 --workers 8 --optimizer SGD --lr0 0.01 --freeze 0 --cos-lr --close-mosaic 15 --patience 40 --class-balanced --domain-weight India_=2 --mixup 0.1 --name simsplit_v8m_coco --no-promote
+```
+
+- `--no-promote` skips the gate (comparing a clean model against the base's memorised val score
+  means nothing), scores the candidate on val and once on test with CIs, and writes
+  `runs\<name>_candidate.json`. Shipped weights and `metrics.json` are not touched; shipping is a
+  separate step.
+- `--domain-weight India_=2` draws India images twice as often (30% of draws instead of 16%);
+  with `--class-balanced` potholes go from 17% to 29% of drawn images.
+- `train_rdd.py` now sets `channels_last=False`. Ultralytics 8.4 turns it on by default on CUDA,
+  and on this RTX 4060 (torch 2.6 cu124) it made YOLOv8m forward+backward 3.7x slower (12 vs 46
+  img/s). With it off, an epoch of the mix takes about 7 minutes.
+- `--workers` defaults to 2 as before; 8 keeps the 6-core Ryzen ahead of the GPU.
+
 ## 5. `copy_paste` does nothing here
 
 `train_rdd.py` passes `copy_paste=0.2`. Ultralytics' `CopyPaste` pastes instance **masks**, and its
@@ -149,11 +193,10 @@ Treat it as off: do not credit it for any result and do not tune it. Check on yo
 
 ## Known gaps
 
-- `prepare_rdd_hf.py` is still hard-wired to `.data\rdd_india`, so the Japan/Czech/US/China extras
-  behind the shipped weights cannot yet be mixed into the grouped split. A candidate trained on
-  India-only grouped data is therefore not like-for-like with the shipped model (16k train
-  images); compare on the field set, not by training-set size.
-- Grouping uses filename ids as a proxy for drive sequences. The audit above says whether that
-  proxy holds; if it does not, find the true sequence key before trusting the grouped split.
+- `prepare_rdd_hf.py --india-dir` mixes the extras into any India split, so a candidate on the
+  look-alike split trains on the same 16k-image mix as the shipped model.
+- Grouping by filename id does not hold for RDD2022 India (ids are shuffled, see section 2). The
+  look-alike split is a proxy too: two frames of one road that look different enough (< 0.95)
+  can still sit in train and test.
 - Val and test hold only images with boxes (clean-road images were never written). Only the
   field set, with empty labels for clean road, measures false positives on empty road.

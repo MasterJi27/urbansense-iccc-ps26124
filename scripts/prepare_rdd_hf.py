@@ -3,6 +3,9 @@
 Source: TamAko783/Unified_Road_Defect_Dataset (YOLO, 4-class CRDDC).
 Keep ground-level RDD-2022 only: Japan, Czech, United_States, China_MotorBike.
 Skip India (our split already covers it — no test leak), Norway, drones/UAV.
+
+  python scripts/prepare_rdd_hf.py                                   # extras + frozen .data/rdd_india
+  python scripts/prepare_rdd_hf.py --india-dir .data/rdd_india_simsplit --mix-dir .data/rdd_simsplit_mix
 """
 
 from __future__ import annotations
@@ -126,9 +129,9 @@ def extract_kept(tars: list[Path], dest: Path) -> tuple[int, int]:
     return n_img, n_lbl
 
 
-def _copy_split(split: str, dest: Path) -> int:
-    img_src = INDIA / "images" / split
-    lbl_src = INDIA / "labels" / split
+def _copy_split(split: str, dest: Path, india: Path = INDIA) -> int:
+    img_src = india / "images" / split
+    lbl_src = india / "labels" / split
     n = 0
     for img in img_src.iterdir():
         if img.suffix not in IMAGE_EXT:
@@ -191,11 +194,12 @@ def build_mix(
     countries: tuple[str, ...] | None = None,
     max_extra: int | None = None,
     seed: int = 42,
+    india: Path = INDIA,
 ) -> Path:
     _rmtree(dest)
-    train_n = _copy_split("train", dest)
-    val_n = _copy_split("val", dest)
-    test_n = _copy_split("test", dest)
+    train_n = _copy_split("train", dest, india)
+    val_n = _copy_split("val", dest, india)
+    test_n = _copy_split("test", dest, india)
     extra = 0
     for img in _select_extras(hf_kept, countries=countries, max_extra=max_extra, seed=seed):
         lbl = hf_kept / "labels" / "train" / f"{img.stem}.txt"
@@ -220,8 +224,11 @@ def build_mix(
     print(
         f"mix yaml={yaml} india_train={train_n} hf_extra={extra} "
         f"val={val_n} test={test_n} countries={countries or 'all-kept'} "
-        f"(val/test frozen India)"
+        f"(val/test = {india.name} val/test)"
     )
+    info = india / "split_info.json"
+    if info.is_file():  # train_rdd.py reads the split mode from here
+        shutil.copy2(info, dest / "split_info.json")
     return yaml
 
 
@@ -235,9 +242,13 @@ def main() -> int:
     parser.add_argument("--max-extra", type=int, default=0, help="Cap extras. 0 = no cap.")
     parser.add_argument("--mix-dir", default="", help="Output mix folder under repo or absolute.")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--india-dir", default="", help=f"India split to take train/val/test from (default {INDIA.name}; e.g. .data/rdd_india_simsplit)")
     args = parser.parse_args()
-    if not (INDIA / "images" / "test").is_dir():
-        print("missing .data/rdd_india — run scripts/prepare_rdd_india.py first", file=sys.stderr)
+    india = Path(args.india_dir) if args.india_dir else INDIA
+    if not india.is_absolute():
+        india = ROOT / india
+    if not (india / "images" / "test").is_dir():
+        print(f"missing {india} — run scripts/prepare_rdd_india.py first", file=sys.stderr)
         return 2
     kept = HF_DIR / "kept"
     kept_imgs = kept / "images" / "train"
@@ -251,7 +262,7 @@ def main() -> int:
         dest = ROOT / dest
     countries = tuple(c.strip() for c in args.countries.split(",") if c.strip()) or None
     max_extra = args.max_extra if args.max_extra > 0 else None
-    build_mix(kept, dest=dest, countries=countries, max_extra=max_extra, seed=args.seed)
+    build_mix(kept, dest=dest, countries=countries, max_extra=max_extra, seed=args.seed, india=india)
     return 0
 
 

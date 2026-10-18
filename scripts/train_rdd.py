@@ -88,6 +88,14 @@ def _split_info(cfg: dict) -> dict:
         return {}
 
 
+def _keep_awake() -> None:
+    """Windows: ask the OS not to idle-sleep while this process runs (released when it exits). No settings change."""
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)  # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+
+
 def skip(reason: str) -> int:
     write_metrics(
         {
@@ -124,8 +132,16 @@ def repeat_factor_weights(labels: list[dict], nc: int, thresh: float):
     return np.where(present, r_c[None, :], 1.0).max(1)
 
 
-def make_balanced_trainer(thresh: float):
-    """DetectionTrainer whose train loader draws images with repeat-factor weights."""
+def domain_weights(files: list[str], domain: dict[str, float]):
+    """Per-image multiplier by filename prefix, e.g. {"India_": 2.0} draws India images twice as often."""
+    import numpy as np
+
+    names = [Path(f).name for f in files]
+    return np.array([next((w for prefix, w in domain.items() if n.startswith(prefix)), 1.0) for n in names])
+
+
+def make_balanced_trainer(thresh: float | None, domain: dict[str, float] | None = None):
+    """DetectionTrainer whose train loader draws images with repeat-factor (thresh) and/or domain weights."""
     from torch.utils.data import WeightedRandomSampler
     from ultralytics.data.build import InfiniteDataLoader
     from ultralytics.models.yolo.detect import DetectionTrainer
@@ -136,8 +152,10 @@ def make_balanced_trainer(thresh: float):
             if mode != "train" or rank != -1:  # DDP keeps its DistributedSampler
                 return loader
             ds = loader.dataset
-            weights = repeat_factor_weights(ds.labels, int(self.data["nc"]), thresh)
-            print(f"[class-balanced] repeat-factor sampling, thresh={thresh}: mean weight {weights.mean():.3f}, max {weights.max():.3f} over {len(weights)} images")
+            weights = repeat_factor_weights(ds.labels, int(self.data["nc"]), thresh) if thresh else torch.ones(len(ds)).numpy()
+            if domain:
+                weights = weights * domain_weights(ds.im_files, domain)
+            print(f"[class-balanced] repeat-factor thresh={thresh}, domain={domain}: mean weight {weights.mean():.3f}, max {weights.max():.3f} over {len(weights)} images")
             sampler = WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double), num_samples=len(ds), replacement=True)
             return InfiniteDataLoader(
                 dataset=ds,
@@ -182,6 +200,27 @@ def _eval_summary(payload: dict, names: list[str]) -> dict:
     }
 
 
+def report_candidate(best: Path, data: Path, runtime_yaml: Path, cfg: dict, names: list[str], args: argparse.Namespace, device: str, n_test: int) -> int:
+    """--no-promote: val (it picked best.pt, so it is a selection number) and test once, with CIs.
+
+    Writes eval JSONs next to the weights and runs/<name>_candidate.json. The shipped weights and
+    metrics.json stay as they are: shipping the candidate is a separate, deliberate step.
+    """
+    report: dict = {"candidate": str(best), "data": str(data), "split": _split_info(cfg), "at": datetime.now(timezone.utc).isoformat()}
+    splits = ["val"] + (["test"] if not args.skip_test and n_test >= MIN_TEST_IMAGES else [])
+    for split in splits:
+        ctx = eval_rdd.make_ctx(data, split, imgsz=args.imgsz, device=device, prepared=(runtime_yaml, cfg))
+        payloads, _ = eval_rdd.evaluate_many([best], ctx, boot=args.boot)
+        out_json = eval_rdd.default_out(best, split)
+        eval_rdd.write_json(out_json, payloads[0])
+        eval_rdd.print_payload(payloads[0], names)
+        report[split] = {**_eval_summary(payloads[0], names), "eval_json": str(out_json)}
+    out = OUT_DIR / "runs" / f"{args.name}_candidate.json"
+    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"candidate report {out}. Shipped weights and metrics.json were not touched.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Honest RDD2022 India fine-tune")
     parser.add_argument("--data", help="Ultralytics data yaml (train/val + names D00 D10 D20 D40)")
@@ -217,7 +256,28 @@ def main() -> int:
         help="repeat-factor sampler: rare classes (D10) drawn more often. Replaces duplicating D10 files on disk.",
     )
     parser.add_argument("--rfs-thresh", type=float, default=0.5, help="repeat-factor threshold; classes in fewer than this fraction of images are oversampled")
+    parser.add_argument(
+        "--domain-weight",
+        action="append",
+        default=[],
+        metavar="PREFIX=W",
+        help="draw train images whose filename starts with PREFIX W times as often (repeatable), e.g. India_=2 when India is a minority of a country mix",
+    )
+    parser.add_argument("--workers", type=int, default=2, help="train dataloader workers (val uses twice as many)")
+    parser.add_argument("--cos-lr", action="store_true", help="cosine LR decay instead of linear")
+    parser.add_argument("--cache", choices=("none", "ram", "disk"), default="none", help="Ultralytics image cache")
+    parser.add_argument("--mixup", type=float, default=None, help="mixup probability (Ultralytics default when unset)")
+    parser.add_argument("--warmup-epochs", type=float, default=None, help="Ultralytics default (3) when unset")
+    parser.add_argument(
+        "--no-promote",
+        action="store_true",
+        help="candidate report only: score the trained weights on val, then once on test; never touch the shipped weights or metrics.json",
+    )
     args = parser.parse_args()
+    try:
+        domain = {k: float(v) for k, v in (item.split("=", 1) for item in args.domain_weight)}
+    except ValueError:
+        return skip(f"--domain-weight wants PREFIX=W, got {args.domain_weight}")
     if not args.data and INDIA_YAML.is_file():
         args.data = str(INDIA_YAML)
     if not args.data:
@@ -243,7 +303,7 @@ def main() -> int:
         "imgsz": args.imgsz,
         "device": device,
         "batch": args.batch,
-        "workers": 2,
+        "workers": args.workers,
         "patience": args.patience,
         "optimizer": args.optimizer,
         "lr0": args.lr0,
@@ -252,12 +312,21 @@ def main() -> int:
         # No-op: CopyPaste needs instance masks and returns immediately for box-only labels (see EVAL.md).
         "copy_paste": 0.2,
         "close_mosaic": args.close_mosaic,
+        # Ultralytics 8.4 trains channels_last on CUDA by default; on the RTX 4060 box (torch 2.6 cu124)
+        # that made YOLOv8m fwd+bwd 3.7x slower (12 vs 46 img/s at batch 8).
+        "channels_last": False,
+        "cos_lr": args.cos_lr,
+        "cache": False if args.cache == "none" else args.cache,
         "project": str(OUT_DIR / "runs"),
         "name": args.name,
         "exist_ok": False,
     }
-    if args.class_balanced:
-        train_kw["trainer"] = make_balanced_trainer(args.rfs_thresh)
+    if args.mixup is not None:
+        train_kw["mixup"] = args.mixup
+    if args.warmup_epochs is not None:
+        train_kw["warmup_epochs"] = args.warmup_epochs
+    if args.class_balanced or domain:
+        train_kw["trainer"] = make_balanced_trainer(args.rfs_thresh if args.class_balanced else None, domain)
     if args.phone_aug:
         train_kw.update(
             hsv_h=0.015,
@@ -270,6 +339,7 @@ def main() -> int:
             erasing=0.15,
         )
     if not args.eval_only:
+        _keep_awake()
         results = model.train(**train_kw)
         save_dir = Path(getattr(results, "save_dir", OUT_DIR / "runs" / args.name))
         best = save_dir / "weights" / "best.pt"
@@ -277,6 +347,8 @@ def main() -> int:
         best = INDIA_BEST
     if not best.is_file():
         return skip(f"no weights to evaluate at {best}")
+    if args.no_promote:
+        return report_candidate(best, data, runtime_yaml, cfg, names, args, device, n_test)
 
     # ---- 1. promotion gate: VAL only ----------------------------------------------------
     shipped = INDIA_BEST.resolve() if INDIA_BEST.is_file() else None

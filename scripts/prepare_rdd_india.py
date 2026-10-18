@@ -17,6 +17,9 @@ Honest-evaluation options (these never touch the frozen .data/rdd_india):
 
   # are neighbouring filename ids really neighbouring frames? (run this first)
   python scripts/prepare_rdd_india.py --skip-download --skip-extract --audit-neighbours
+
+  # they are not (ids are shuffled): split look-alike clusters instead, in .data/rdd_india_simsplit
+  python scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ ZIP_PATH = DATA_ROOT / "RDD2022_released_through_CRDDC2022.zip"
 EXTRACT = DATA_ROOT / "rdd2022_raw"
 LEGACY_OUT = DATA_ROOT / "rdd_india"  # frozen: the split every published metric so far was measured on
 GROUPED_OUT = DATA_ROOT / "rdd_india_grouped"
+SIMILAR_OUT = DATA_ROOT / "rdd_india_simsplit"
 FIGSHARE = "https://ndownloader.figshare.com/files/38030910"
 KEEP = ("D00", "D10", "D20", "D40")
 NAME_TO_ID = {name: i for i, name in enumerate(KEEP)}
@@ -51,6 +55,8 @@ D10_ID = str(NAME_TO_ID["D10"])
 # instead. `--d10-repeat 10` reproduces the old build.
 D10_TRAIN_REPEAT = 1
 SPLIT_SEED = 42
+SIM_THRESH = 0.95
+MAX_CLUSTER_FRAC = 0.02
 GROUP_SIZE = 30
 EMBARGO = 2
 IMG_EXT = {".jpg", ".jpeg", ".png"}
@@ -274,6 +280,73 @@ def split_grouped(pairs: list[tuple[Path, Path]], seed: int, group_size: int, em
     return out, info
 
 
+def _thumb(path: Path):
+    """Zero-mean, unit-norm 32x32 grey thumbnail. Cosine >= ~0.95 means the same spot of the same drive."""
+    from PIL import Image  # shipped with ultralytics
+    import numpy as np
+
+    with Image.open(path) as im:
+        a = np.asarray(im.convert("L").resize((32, 32), Image.BILINEAR), dtype=np.float32).ravel()
+    a -= a.mean()
+    return a / (np.linalg.norm(a) + 1e-6)
+
+
+def split_similar(pairs: list[tuple[Path, Path]], seed: int, thresh: float, max_cluster_frac: float) -> tuple[dict[str, list[tuple[Path, Path]]], dict]:
+    """Split whole clusters of look-alike images, so the same spot of a drive never straddles splits.
+
+    RDD2022 India filename ids are shuffled (--audit-neighbours), so blocks of ids do not group
+    frames of one drive. Instead: link every two labelled images whose thumbnail cosine is
+    >= thresh, take connected components, send components bigger than max_cluster_frac of the
+    images to train, shuffle the rest (seeded) and fill test, then val, to 10% each by image
+    count. By construction no val/test image has a train image (or a test image a val image)
+    at or above thresh.
+    """
+    import numpy as np
+
+    pairs = [p for p in pairs if voc_to_yolo(p[1])]  # only images that get written count toward 80/10/10
+    feats = np.stack([_thumb(img) for img, _ in pairs])
+    sim = feats @ feats.T
+    np.fill_diagonal(sim, -1.0)
+    parent = list(range(len(pairs)))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for a, b in zip(*np.nonzero(np.triu(sim >= thresh))):
+        ra, rb = find(int(a)), find(int(b))
+        if ra != rb:
+            parent[ra] = rb
+    comps: dict[int, list[int]] = {}
+    for i in range(len(pairs)):
+        comps.setdefault(find(i), []).append(i)
+    big = max(2, int(len(pairs) * max_cluster_frac))
+    forced = [c for c in comps.values() if len(c) > big]
+    rest = sorted((c for c in comps.values() if len(c) <= big), key=lambda c: pairs[c[0]][0].name)
+    random.Random(seed).shuffle(rest)
+    target = int(len(pairs) * 0.1)
+    idx: dict[str, list[int]] = {"train": [i for c in forced for i in c], "val": [], "test": []}
+    for comp in rest:
+        split = "test" if len(idx["test"]) < target else "val" if len(idx["val"]) < target else "train"
+        idx[split] += comp
+
+    def cross(a: str, b: str) -> float:
+        return round(float(sim[np.ix_(idx[a], idx[b])].max()), 4) if idx[a] and idx[b] else 0.0
+
+    sizes = sorted((len(c) for c in comps.values()), reverse=True)
+    info = {
+        "sim_thresh": thresh,
+        "n_clusters": len(comps),
+        "largest_clusters": sizes[:5],
+        "images_in_multi_clusters": sum(s for s in sizes if s > 1),
+        "clusters_forced_to_train": len(forced),
+        "max_cross_split_cosine": {"val_train": cross("val", "train"), "test_train": cross("test", "train"), "test_val": cross("test", "val")},
+    }
+    return {k: [pairs[i] for i in sorted(v)] for k, v in idx.items()}, info
+
+
 # --------------------------------------------------------------------------------------
 # Audit: are neighbouring ids neighbouring frames?
 # --------------------------------------------------------------------------------------
@@ -420,6 +493,9 @@ def convert(raw: Path, out: Path, args: argparse.Namespace) -> Path:
     if args.split_by_group:
         splits, ginfo = split_grouped(pairs, args.seed, args.group_size, args.embargo)
         mode = "group"
+    elif args.split_by_similarity:
+        splits, ginfo = split_similar(pairs, args.seed, args.sim_thresh, args.max_cluster_frac)
+        mode = "similarity"
     else:
         splits, ginfo = split_random(pairs, args.seed), {}
         mode = "random"
@@ -457,7 +533,9 @@ def convert(raw: Path, out: Path, args: argparse.Namespace) -> Path:
     print(msg)
     for split in ("train", "val", "test"):
         print(f"  {split:5s} class instances {classes[split]}")
-    if ginfo:
+    if mode == "similarity":
+        print(f"  clusters={ginfo['n_clusters']} largest={ginfo['largest_clusters']} forced_to_train={ginfo['clusters_forced_to_train']} max cross-split cosine={ginfo['max_cross_split_cosine']} (thresh {ginfo['sim_thresh']})")
+    elif ginfo:
         print(f"  groups={ginfo['n_groups']} median_group_images={ginfo['median_group_images']} unnumbered={ginfo['unnumbered_images']} embargo_dropped val={ginfo['embargo_dropped_val']} train={ginfo['embargo_dropped_train']}")
     print(f"  {skipped} images had no D00/D10/D20/D40 box and were left out (so val/test contain no empty-road images).")
     return out / "data.yaml"
@@ -473,14 +551,20 @@ def main() -> int:
     parser.add_argument("--split-by-group", action="store_true", help="keep neighbouring filename ids in one split (writes a NEW yaml, never the frozen rdd_india)")
     parser.add_argument("--group-size", type=int, default=GROUP_SIZE, help="consecutive ids per block for --split-by-group")
     parser.add_argument("--embargo", type=int, default=EMBARGO, help="drop images within N ids of a val/test image from val/train")
+    parser.add_argument("--split-by-similarity", action="store_true", help="keep look-alike images (same spot of one drive) in one split; India ids are shuffled, so use this instead of --split-by-group")
+    parser.add_argument("--sim-thresh", type=float, default=SIM_THRESH, help="thumbnail cosine at or above which two images count as the same spot")
+    parser.add_argument("--max-cluster-frac", type=float, default=MAX_CLUSTER_FRAC, help="look-alike clusters bigger than this fraction of the images go to train")
     parser.add_argument("--field-test-dir", type=Path, help="hand-labelled YOLO windshield set (images/ + labels/) registered as test split `field` in data_field.yaml")
     parser.add_argument("--field-missing-as-background", action="store_true", help="treat field images without a label file as clean road")
     parser.add_argument("--d10-repeat", type=int, default=D10_TRAIN_REPEAT, help="duplicate D10 train images N times (1 = off, old builds used 10; prefer train_rdd.py --class-balanced)")
     parser.add_argument("--copy", action="store_true", help="copy image files instead of hard-linking them")
     parser.add_argument("--audit-neighbours", action="store_true", help="check whether neighbouring ids are neighbouring frames, then exit")
     args = parser.parse_args()
-    out = (args.out_dir or (GROUPED_OUT if args.split_by_group else LEGACY_OUT)).resolve()
-    if out == LEGACY_OUT.resolve() and (args.split_by_group or args.field_test_dir):
+    if args.split_by_group and args.split_by_similarity:
+        print("pick one of --split-by-group / --split-by-similarity", file=sys.stderr)
+        return 2
+    out = (args.out_dir or (GROUPED_OUT if args.split_by_group else SIMILAR_OUT if args.split_by_similarity else LEGACY_OUT)).resolve()
+    if out == LEGACY_OUT.resolve() and (args.split_by_group or args.split_by_similarity or args.field_test_dir):
         print(f"refusing to write {out}: it is the frozen split behind the published metrics. Pass a different --out-dir.", file=sys.stderr)
         return 2
     if not args.skip_download:
