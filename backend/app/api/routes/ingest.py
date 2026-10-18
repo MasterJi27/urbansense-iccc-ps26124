@@ -5,6 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,7 @@ from app.services.azure_edge import (
     validate_still,
 )
 from app.services.place import reverse_place
-from app.services.bbox_severity import severity_from_boxes
+from app.services.bbox_severity import severity_for_detection
 from app.services.field_gate import corridor_block_reason, gps_block_reason, speed_breaker_code
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
 from app.services.ahead_gps import project_ahead
@@ -37,6 +38,7 @@ from app.services.rdd_cloud import detect_rdd, rdd_cloud_status, top_event
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 _STILL_POOL = ThreadPoolExecutor(max_workers=3)
 CLIP_MAX_BYTES = 4_000_000
+_INGEST_ATTEMPTS = 2
 
 
 def _safe_analyze_still(data: bytes) -> dict:
@@ -49,12 +51,23 @@ def _safe_analyze_still(data: bytes) -> dict:
 
 async def _ingest(body: ObservationIn, source: SourceType, db: Session, user: User, background: BackgroundTasks):
     body.source_type = source
-    try:
-        obs, event, created = ingest_observation(db, body, actor_id=user.id)
-    except IntegrityError as exc:
-        raise HTTPException(status_code=400, detail="Could not store observation. Bus/source link was invalid.") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    for attempt in range(_INGEST_ATTEMPTS):
+        try:
+            obs, event, created = await run_in_threadpool(ingest_observation, db, body, actor_id=user.id)
+            break
+        except IntegrityError as exc:
+            db.rollback()
+            reason = str(exc.orig).lower()
+            if "public_code" in reason:
+                # Two first sightings drew the same EVENT code. A retry makes a new observation id, so a new code.
+                if attempt + 1 < _INGEST_ATTEMPTS:
+                    continue
+                raise HTTPException(status_code=409, detail="Event code collision. Retry the upload.") from exc
+            if "foreign key" in reason:
+                raise HTTPException(status_code=400, detail="Could not store observation. Bus/source link was invalid.") from exc
+            raise HTTPException(status_code=409, detail="Could not store observation. It conflicts with stored data.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     background.add_task(publish_event, event, created)
     extra = body.extra if isinstance(getattr(body, "extra", None), dict) else {}
     return {
@@ -111,8 +124,8 @@ def _vision_observation(data: bytes, name: str, *, latitude, longitude, gps_accu
     ahead = project_ahead(latitude, longitude, heading, top.get("bbox") if top else None)
     if top:
         event_type = EventType(top["event_type"])
-        graded = severity_from_boxes([{"x1": b[0], "y1": b[1], "x2": b[2], "y2": b[3]} for b in [top["bbox"]]], frame_w=1, frame_h=1)
-        severity = Severity(top["severity"]) if graded["bbox_frac"] < 0.05 else graded["severity"]
+        graded = severity_for_detection(top)
+        severity = graded["severity"]
         method = "azure-rdd-onnx"
         ai_status = "REAL"
         engine_status = "REAL"
@@ -207,10 +220,10 @@ async def probe_phone_still(
 ):
     try:
         data = await read_still(file)
-        safety = screen_still(data)
+        safety = await run_in_threadpool(screen_still, data)
     except StillRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    rdd = detect_rdd(data) if safety.get("ok") else {"ok": False, "detections": [], "ai_status": "DISABLED"}
+    rdd = await run_in_threadpool(detect_rdd, data) if safety.get("ok") else {"ok": False, "detections": [], "ai_status": "DISABLED"}
     return {
         "ok": bool(safety.get("ok")),
         "ingested": False,
@@ -269,9 +282,10 @@ async def ingest_phone_still(
     if clip is not None:
         raw = await clip.read(CLIP_MAX_BYTES + 1)
         if raw and len(raw) <= CLIP_MAX_BYTES and looks_like_video(raw):
-            live_photo_url = save_evidence_bytes(clip.filename or "live.webm", raw)
+            live_photo_url = await run_in_threadpool(save_evidence_bytes, clip.filename or "live.webm", raw)
     try:
-        body, _vision, _safety, _url = _vision_observation(
+        body, _vision, _safety, _url = await run_in_threadpool(
+            _vision_observation,
             data,
             name,
             latitude=latitude,
@@ -316,7 +330,8 @@ async def ingest_cctv_still(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "cctv-still.jpg"
     try:
-        body, _vision, _safety, _url = _vision_observation(
+        body, _vision, _safety, _url = await run_in_threadpool(
+            _vision_observation,
             data,
             name,
             latitude=latitude,
@@ -366,7 +381,8 @@ async def ingest_bus_stream_frame(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "bus-frame.jpg"
     try:
-        body, _vision, _safety, _url = _vision_observation(
+        body, _vision, _safety, _url = await run_in_threadpool(
+            _vision_observation,
             data,
             name,
             latitude=latitude,

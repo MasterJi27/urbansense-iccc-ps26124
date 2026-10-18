@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     field_token_expire_minutes: int = 45
     algorithm: str = "HS256"
     demo_api_enabled: bool = True
+    # How many reverse proxies in front of the app append to X-Forwarded-For (Azure App Service = 1).
+    # Unset: 1 outside development (App Service front end), 0 in development/test where uvicorn is hit directly.
+    # 0 means X-Forwarded-For is ignored and the socket peer is the client.
+    trusted_proxy_hops: int | None = Field(default=None, ge=0)
 
     database_url: str = "postgresql+psycopg://urbansense:urbansense@localhost:5432/urbansense"
     redis_url: str = "redis://localhost:6379/0"
@@ -72,6 +76,12 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env.strip().lower() in {"development", "test", "testing"}
+
+    @property
+    def effective_trusted_proxy_hops(self) -> int:
+        if self.trusted_proxy_hops is not None:
+            return self.trusted_proxy_hops
+        return 0 if self.is_development else 1
 
 
 @lru_cache

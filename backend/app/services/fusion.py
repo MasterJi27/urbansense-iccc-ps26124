@@ -94,11 +94,12 @@ class SpatialTemporalFusionEngine(FusionEngine):
             dist = haversine_m(observation.latitude, observation.longitude, ev.latitude, ev.longitude)
             if dist > settings.fusion_max_distance_meters:
                 continue
-            if best is None or dist < (best_d or 1e12):
+            # `best_d or 1e12` treated an exact 0.0 m match as unset, so any farther candidate displaced it.
+            if best_d is None or dist < best_d:
                 best, best_d = ev, dist
 
         if best is None:
-            event = _new_event_from_obs(observation)
+            event = _new_event_from_obs(observation, _free_event_code(db, observation.id))
             db.add(event)
             db.flush()
             db.add(EventObservation(event_id=event.id, observation_id=observation.id, distance_m=0))
@@ -128,10 +129,20 @@ class SpatialTemporalFusionEngine(FusionEngine):
         return FusionResult(event=best, created=False, distance_m=best_d, reason=best.fusion_reason)
 
 
-def _new_event_from_obs(obs: Observation) -> UrbanEvent:
-    seq = obs.id.replace("-", "")[:6].upper()
+def _free_event_code(db: Session, seed_id: str) -> str:
+    """EVENT-XXXXXX from the observation uuid. Six hex chars collide around a few thousand events, so a taken
+    code is lengthened from the same uuid instead of being reused. Concurrent inserts are caught by the unique index."""
+    digits = seed_id.replace("-", "").upper()
+    for width in (6, 8, 10, 12, 16, len(digits)):
+        code = f"EVENT-{digits[:width]}"
+        if db.scalar(select(UrbanEvent.id).where(UrbanEvent.public_code == code)) is None:
+            return code
+    return f"EVENT-{digits}"
+
+
+def _new_event_from_obs(obs: Observation, public_code: str | None = None) -> UrbanEvent:
     return UrbanEvent(
-        public_code=f"EVENT-{seq}",
+        public_code=public_code or f"EVENT-{obs.id.replace('-', '')[:6].upper()}",
         event_type=obs.event_type,
         severity=obs.severity,
         status=EventStatus.UNVERIFIED,
