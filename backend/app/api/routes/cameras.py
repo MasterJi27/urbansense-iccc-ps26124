@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.api.routes.ingest import _ingest, _vision_observation
@@ -22,9 +23,11 @@ def _kind(raw: str | None) -> SourceType:
     return SourceType.ROAD_CCTV if (raw or "").upper() == "ROAD_CCTV" else SourceType.BUS_CCTV
 
 
-def _upsert_node(db: Session, body: CameraIn) -> SensorNode:
+def _upsert_node(db: Session, body: CameraIn, *, create_only: bool = False) -> SensorNode:
     code = body.code.strip().upper().replace(" ", "-")
     node = db.query(SensorNode).filter(SensorNode.code == code).first()
+    if node is not None and create_only:
+        raise HTTPException(status_code=403, detail="Field booth tokens can only register new cameras. This code exists.")
     if node is None:
         node = SensorNode(code=code)
         db.add(node)
@@ -82,9 +85,11 @@ def list_cameras(db: Session = Depends(get_db), _: User = Depends(get_current_us
 
 @router.post("")
 def register_camera(body: CameraIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if getattr(user, "auth_scope", "iccc") != "field" and ROLE_RANK.get(user.role, 0) < ROLE_RANK[UserRole.INSPECTOR]:
+    field = getattr(user, "auth_scope", "iccc") == "field"
+    if not field and ROLE_RANK.get(user.role, 0) < ROLE_RANK[UserRole.INSPECTOR]:
         raise HTTPException(status_code=403, detail="Insufficient role")
-    return _node_out(db, _upsert_node(db, body))
+    # A PIN-holder must not rewrite a node it did not create, e.g. a bus phone node found by guessing its code.
+    return _node_out(db, _upsert_node(db, body, create_only=field))
 
 
 @router.post("/pull")
@@ -96,7 +101,7 @@ async def pull_camera_snapshot(
 ):
     try:
         assert_snapshot_url(body.snapshot_url)
-        data = fetch_snapshot(body.snapshot_url)
+        data = await run_in_threadpool(fetch_snapshot, body.snapshot_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     node = _upsert_node(
@@ -105,7 +110,8 @@ async def pull_camera_snapshot(
     )
     kind = _kind(body.kind)
     try:
-        obs, _vision, _safety, _url = _vision_observation(
+        obs, _vision, _safety, _url = await run_in_threadpool(
+            _vision_observation,
             data,
             f"{node.code}.jpg",
             latitude=body.latitude,

@@ -8,6 +8,8 @@ from time import monotonic
 
 from fastapi import HTTPException, Request
 
+from app.config import get_settings
+
 
 class SlidingWindow:
     def __init__(self) -> None:
@@ -85,10 +87,34 @@ def reset_limits() -> None:
     gate.reset()
 
 
+def _strip_port(hop: str) -> str:
+    """Azure App Service appends the client as ip:port. The port changes per connection, so drop it."""
+    if hop.startswith("["):  # [v6]:port
+        end = hop.find("]")
+        return hop[1:end] if end > 0 else hop
+    if hop.count(":") == 1:  # v4:port (a bare v6 has several colons)
+        return hop.split(":", 1)[0]
+    return hop
+
+
 def client_ip(request: Request) -> str:
-    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
+    """Client address for rate limiting.
+
+    X-Forwarded-For is client-controlled on its left side: every proxy appends the peer it saw, so only the
+    right-most `trusted_proxy_hops` entries were written by infrastructure we control. Taking the first entry
+    lets a caller rotate the header and dodge the login limiter and the field-booth PIN lockout.
+    """
+    hops = get_settings().effective_trusted_proxy_hops
+    if hops > 0:
+        chain = [
+            hop.strip()
+            for line in request.headers.getlist("x-forwarded-for")
+            for hop in line.split(",")
+            if hop.strip()
+        ]
+        # A chain shorter than the proxy count was not written by our proxies; fall back to the socket peer.
+        if len(chain) >= hops:
+            return _strip_port(chain[-hops])
     if request.client and request.client.host:
         return request.client.host
     return "unknown"

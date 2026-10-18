@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
 _DEFAULT = "evidence.bin"
+# Uploads come from any client OS, so split on both separators. Path(...).name only splits on the host separator.
+_SEPARATORS = re.compile(r"[\\/]")
 
 
 def safe_filename(filename: str | None, default: str = _DEFAULT, max_len: int = 128) -> str:
-    name = Path(filename).name if filename else default
+    name = _SEPARATORS.split(filename)[-1] if filename else default
     if not name or name in {".", ".."}:
         name = default
     cleaned = []

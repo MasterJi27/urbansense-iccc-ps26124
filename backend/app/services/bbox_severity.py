@@ -56,3 +56,21 @@ def severity_from_boxes(
         "method": "bbox-area",
         "note": "Largest box / frame. Not stereo depth. Never CRITICAL from area alone.",
     }
+
+
+def severity_for_detection(det: dict) -> dict:
+    """One rule for every RDD route: the top detection's box area sets severity.
+
+    Area alone is monotonic, so a bigger box is never graded below a smaller one. The class default
+    (pothole = HIGH, crack = MEDIUM) is only the answer when the detection carries no usable box; mixing it
+    in below a threshold made a 1% pothole HIGH while an 8% one was MEDIUM.
+    """
+    box = det.get("bbox")
+    graded = severity_from_boxes([box], frame_w=1, frame_h=1)
+    if box_fraction(box, 1, 1) > 0:  # unrounded: bbox_frac rounds a sliver of a box down to 0
+        return graded
+    try:
+        fallback = Severity(det.get("severity"))
+    except ValueError:
+        fallback = Severity.MEDIUM
+    return {**graded, "severity": fallback, "method": "class-default", "note": "No usable box. Class default severity."}

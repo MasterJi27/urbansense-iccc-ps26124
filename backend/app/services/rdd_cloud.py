@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import time
-from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -12,11 +11,12 @@ from typing import Any
 try:
     import numpy as np
     import onnxruntime as ort
-    from PIL import Image
+    from PIL import Image, ImageOps
 except ImportError:
     np = None  # type: ignore[assignment]
     ort = None  # type: ignore[assignment]
     Image = None  # type: ignore[assignment]
+    ImageOps = None  # type: ignore[assignment]
 
 from app.models.event import EventType, Severity
 
@@ -30,6 +30,8 @@ IMGSZ = 640
 CONF = 0.18
 IOU = 0.45
 _LOCK = Lock()
+_SESSION_LOCK = Lock()
+_SESSION: Any = None
 
 
 def weights_path() -> Path:
@@ -62,17 +64,24 @@ def warmup_rdd() -> None:
         _session()
 
 
-@lru_cache(maxsize=1)
 def _session():
+    """Build the ONNX session once. A missing runtime or model returns None and is not remembered,
+    so weights that land after the first request are picked up instead of failing until restart."""
+    global _SESSION
+    if _SESSION is not None:
+        return _SESSION
     if ort is None or np is None:
         return None
     path = weights_path()
     if not path.is_file():
         return None
-    opts = ort.SessionOptions()
-    opts.intra_op_num_threads = 4
-    opts.inter_op_num_threads = 1
-    return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = 4
+            opts.inter_op_num_threads = 1
+            _SESSION = ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+        return _SESSION
 
 
 def _letterbox(image: Any) -> tuple[Any, float, int, int]:
@@ -122,7 +131,8 @@ def detect_rdd(data: bytes, *, conf: float = CONF) -> dict[str, Any]:
         empty["reason"] = status["note"]
         return empty
     try:
-        image = Image.open(io.BytesIO(data)).convert("RGB")
+        # Phone stills carry their rotation in EXIF. Without this a portrait shot is read sideways and the boxes drift.
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
     except Exception as exc:
         empty["reason"] = f"unreadable still: {exc}"
         return empty
@@ -147,7 +157,7 @@ def detect_rdd(data: bytes, *, conf: float = CONF) -> dict[str, Any]:
     detections = _decode(raw, orig_w, orig_h, scale, pad_x, pad_y, conf)
     return {
         "ok": True,
-        "ai_status": "REAL" if detections else "REAL",
+        "ai_status": "REAL",
         "engine_status": "REAL",
         "provider": "Azure App Service",
         "model": "YOLOv8s_RDD_india.onnx",
