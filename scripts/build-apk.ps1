@@ -4,6 +4,7 @@ Build the Flutter app (mobile/) into a release APK on this Windows box.
   .\scripts\build-apk.ps1                          # arm64 APK -> mobile\build\apk\SadakSaarthi-<version>-arm64.apk
   .\scripts\build-apk.ps1 -LowPriority             # same, but easy on the CPU (use while training runs)
   .\scripts\build-apk.ps1 -ApiBase https://host    # point the app at another server (default: the Azure URL in the code)
+  .\scripts\build-apk.ps1 -Platform android-x64 -ApiBase http://10.0.2.2:8000 -Tag local   # emulator against the local backend
 
 Why a copy of mobile/ is built instead of mobile/ itself:
   * Flutter on Windows needs symlinks for plugins while mobile/windows exists. That needs Windows Developer
@@ -21,6 +22,7 @@ param(
     [string]$Tmp = 'D:\tools\tmp',
     [string]$ApiBase = '',
     [string]$Platform = 'android-arm64',
+    [string]$Tag = '',
     [switch]$LowPriority
 )
 # Continue, not Stop: Windows PowerShell 5.1 turns a native command's stderr (flutter prints warnings there) into a
@@ -65,7 +67,8 @@ $version = ((Get-Content (Join-Path $src 'pubspec.yaml')) | Where-Object { $_ -m
 $abi = $Platform -replace '^android-', ''
 $outDir = Join-Path $src 'build\apk'
 New-Item -ItemType Directory -Force $outDir -ErrorAction Stop | Out-Null
-$out = Join-Path $outDir "SadakSaarthi-$version-$abi.apk"
+$suffix = if ($Tag) { "-$Tag" } else { '' }
+$out = Join-Path $outDir "SadakSaarthi-$version-$abi$suffix.apk"
 Copy-Item $built $out -Force -ErrorAction Stop
 "APK: $out ($([math]::Round((Get-Item $out).Length / 1MB, 1)) MB)"
 "SHA256: $((Get-FileHash $out -Algorithm SHA256).Hash)"

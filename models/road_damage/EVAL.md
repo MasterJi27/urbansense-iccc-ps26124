@@ -179,6 +179,27 @@ section 2 split avoids that:
   img/s). With it off, an epoch of the mix takes about 7 minutes.
 - `--workers` defaults to 2 as before; 8 keeps the 6-core Ryzen ahead of the GPU.
 
+**Result (2026-10-19, `simsplit_v8m_coco`).** Early stopping ended the run at epoch 78 of 120 (best epoch 38,
+8.7 h). `best.pt` on the similarity split, `model.val()` headline, bootstrap CI over images from the own pipeline:
+
+| split | n | mAP50 | mAP50-95 | AP50 D00 / D10 / D20 / D40 |
+|---|---|---|---|---|
+| val (picked `best.pt`, a selection set) | 322 | 0.448 [0.37, 0.53] | 0.195 | 0.41 / 0.18 / 0.71 / 0.49 |
+| test (scored once) | 322 | 0.443 [0.36, 0.55] | 0.177 | 0.48 / 0.17 / 0.61 / 0.51 |
+
+- The own pipeline reads 0.03-0.04 lower than `model.val()` (the script warns above 0.01 and says to trust
+  `model.val()` for the headline). The CI half-width is about 0.1, so the gap is inside the noise.
+- Test has 4 D10 boxes and val 9: the D10 numbers mean nothing.
+- Same test, own pipeline: new 0.411, shipped `YOLOv8s_RDD_india.pt` 0.704, base `YOLOv8_Small_RDD.pt` 0.718. That
+  is not a contest. The base saw every India image and the shipped model trained on a random split that overlaps this
+  test. The 0.3 gap is roughly how much memorised frames were worth. It does not show the shipped model is better in
+  the field either. Only a labelled windshield set can say that (section 3).
+- Not shipped. A clean 0.44 is not evidence of beating the shipped weights, and YOLOv8m is about 2.7x the compute of
+  YOLOv8s on the Azure CPU. `metrics.json` and `YOLOv8s_RDD_india.pt` were not touched (`--no-promote`).
+- The in-run scoring ran out of GPU memory (the trainer process still held 16 GB incl. shared memory), after training
+  and before any test image was scored. Rerun it in a fresh process:
+  `train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model <best.pt> --eval-only --no-promote --name <run>`.
+
 ## 5. `copy_paste` does nothing here
 
 `train_rdd.py` passes `copy_paste=0.2`. Ultralytics' `CopyPaste` pastes instance **masks**, and its
