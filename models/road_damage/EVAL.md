@@ -196,9 +196,18 @@ section 2 split avoids that:
   the field either. Only a labelled windshield set can say that (section 3).
 - Not shipped. A clean 0.44 is not evidence of beating the shipped weights, and YOLOv8m is about 2.7x the compute of
   YOLOv8s on the Azure CPU. `metrics.json` and `YOLOv8s_RDD_india.pt` were not touched (`--no-promote`).
-- The in-run scoring ran out of GPU memory (the trainer process still held 16 GB incl. shared memory), after training
-  and before any test image was scored. Rerun it in a fresh process:
-  `train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model <best.pt> --eval-only --no-promote --name <run>`.
+- The in-run scoring ran out of GPU memory right after training, before any test image was scored. Rerun it in a fresh
+  process: `train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model <best.pt> --eval-only --no-promote --name <run>`.
+  Correction (2026-10-19): a fresh process is not enough on its own. For the India fine-tune's `best.pt` val scored and
+  the test split then ran out of memory in the fresh process too. PyTorch's allocator grows across evaluations (NMS at
+  conf=0.001 asks for ~3 GB blocks; Windows shared GPU memory lets it pass 16 GB before failing). `report_candidate`
+  now frees memory between splits. If it still fails, score each split in its own process:
+  `eval_rdd.py --weights <best.pt> --data <yaml> --split val` and then `--split test`. The fix was checked on that same
+  `best.pt`: val and test both scored without running out of memory.
+- India-only fine-tune (`simsplit_v8m_india_ft`): run 1's `best.pt` as the start, India train only (2579 images),
+  SGD lr0 0.002, freeze 10, `--class-balanced`. Early stopping ended it at epoch 13, best epoch 1. Val 0.450, test
+  0.421 [0.36, 0.56] against run 1's 0.448 / 0.443: no gain. Val fell from 0.452 at epoch 1 to about 0.40-0.42 while the
+  training loss kept dropping, so it memorises the 2.6k Indian training images. Not shipped.
 
 ## 5. `copy_paste` does nothing here
 

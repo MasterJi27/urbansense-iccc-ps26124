@@ -20,6 +20,7 @@ Dataset: https://doi.org/10.6084/m9.figshare.21431547 (RDD2022 / CRDDC).
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 from datetime import datetime, timezone
@@ -215,6 +216,12 @@ def report_candidate(best: Path, data: Path, runtime_yaml: Path, cfg: dict, name
         eval_rdd.write_json(out_json, payloads[0])
         eval_rdd.print_payload(payloads[0], names)
         report[split] = {**_eval_summary(payloads[0], names), "eval_json": str(out_json)}
+        # PyTorch's allocator grows from one evaluation to the next (NMS at conf=0.001 asks for ~3 GB blocks, and on
+        # Windows shared GPU memory lets it climb past 16 GB), so the second split ran out of memory in a fresh process.
+        del ctx, payloads
+        gc.collect()
+        if _cuda():
+            torch.cuda.empty_cache()
     out = OUT_DIR / "runs" / f"{args.name}_candidate.json"
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"candidate report {out}. Shipped weights and metrics.json were not touched.")
@@ -343,6 +350,12 @@ def main() -> int:
         results = model.train(**train_kw)
         save_dir = Path(getattr(results, "save_dir", OUT_DIR / "runs" / args.name))
         best = save_dir / "weights" / "best.pt"
+        # The trainer keeps model, optimizer and EMA on the GPU: let go of all of it before scoring in this process.
+        model.trainer = None
+        del model, results
+        gc.collect()
+        if _cuda():
+            torch.cuda.empty_cache()
     elif INDIA_BEST.is_file() and not Path(args.model).is_file():
         best = INDIA_BEST
     if not best.is_file():
