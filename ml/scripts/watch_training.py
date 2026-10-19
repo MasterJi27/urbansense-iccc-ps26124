@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ANSI = re.compile(r"\x1b?\[[0-9;?]*[A-Za-z]")
 PROGRESS = re.compile(r"\b\d+/\d+\s+[\d.]+G\s")
 
@@ -80,8 +80,8 @@ def main() -> int:
     ap.add_argument("--every", type=float, default=2.0, help="refresh seconds")
     ap.add_argument("--rows", type=int, default=15, help="epochs shown")
     args = ap.parse_args()
-    run = ROOT / "models" / "road_damage" / "runs" / args.name
-    log = args.log or ROOT / ".data" / f"{args.name}_train.log"
+    run = ROOT / "ml" / "models" / "road_damage" / "runs" / args.name
+    log = args.log or ROOT / "data" / f"{args.name}_train.log"
     key = "metrics/mAP50(B)"
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")

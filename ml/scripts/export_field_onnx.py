@@ -7,10 +7,10 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 RDD_PT = [
-    ROOT / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
-    ROOT / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
+    ROOT / "ml" / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
+    ROOT / "ml" / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
 ]
 CLOUD_RDD = ROOT / "backend" / "app" / "weights" / "rdd_india.onnx"
 DEST_DIR = ROOT / "dashboard" / "public" / "weights"

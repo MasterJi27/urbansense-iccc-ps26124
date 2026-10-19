@@ -5,8 +5,8 @@ F1-optimal confidence, and bootstrap 95% confidence intervals over images. The t
 split is only a few hundred images, so differences under about 0.03 mAP are noise.
 Pass several weights to also get a paired comparison table (first = reference).
 
-  python scripts/eval_rdd.py --weights models/road_damage/YOLOv8s_RDD_india.pt --data .data/rdd_india/data.yaml
-  python scripts/eval_rdd.py --weights base.pt tuned.pt --labels base tuned --data X/data.yaml --split test
+  python ml/scripts/eval_rdd.py --weights ml/models/road_damage/YOLOv8s_RDD_india.pt --data data/rdd_india/data.yaml
+  python ml/scripts/eval_rdd.py --weights base.pt tuned.pt --labels base tuned --data X/data.yaml --split test
 
 Two numbers per model are reported side by side:
   ultralytics_val  model.val() — the number train_rdd.py has always printed.
@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 IOUV = np.linspace(0.5, 0.95, 10)
 PX = np.linspace(0.0, 1.0, 1000)

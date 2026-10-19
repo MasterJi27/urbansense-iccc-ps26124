@@ -4,8 +4,8 @@ Source: TamAko783/Unified_Road_Defect_Dataset (YOLO, 4-class CRDDC).
 Keep ground-level RDD-2022 only: Japan, Czech, United_States, China_MotorBike.
 Skip India (our split already covers it — no test leak), Norway, drones/UAV.
 
-  python scripts/prepare_rdd_hf.py                                   # extras + frozen .data/rdd_india
-  python scripts/prepare_rdd_hf.py --india-dir .data/rdd_india_simsplit --mix-dir .data/rdd_simsplit_mix
+  python ml/scripts/prepare_rdd_hf.py                                   # extras + frozen data/rdd_india
+  python ml/scripts/prepare_rdd_hf.py --india-dir data/rdd_india_simsplit --mix-dir data/rdd_simsplit_mix
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import sys
 import tarfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / ".data"
+ROOT = Path(__file__).resolve().parents[2]
+DATA = ROOT / "data"
 INDIA = DATA / "rdd_india"
 HF_DIR = DATA / "hf_unified"
 MIX = DATA / "rdd_hf_mix"
@@ -242,13 +242,13 @@ def main() -> int:
     parser.add_argument("--max-extra", type=int, default=0, help="Cap extras. 0 = no cap.")
     parser.add_argument("--mix-dir", default="", help="Output mix folder under repo or absolute.")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--india-dir", default="", help=f"India split to take train/val/test from (default {INDIA.name}; e.g. .data/rdd_india_simsplit)")
+    parser.add_argument("--india-dir", default="", help=f"India split to take train/val/test from (default {INDIA.name}; e.g. data/rdd_india_simsplit)")
     args = parser.parse_args()
     india = Path(args.india_dir) if args.india_dir else INDIA
     if not india.is_absolute():
         india = ROOT / india
     if not (india / "images" / "test").is_dir():
-        print(f"missing {india} — run scripts/prepare_rdd_india.py first", file=sys.stderr)
+        print(f"missing {india} — run ml/scripts/prepare_rdd_india.py first", file=sys.stderr)
         return 2
     kept = HF_DIR / "kept"
     kept_imgs = kept / "images" / "train"

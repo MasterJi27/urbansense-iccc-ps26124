@@ -76,7 +76,7 @@ export default function Settings(){
             <b>{row.maps_to}{row.map50 != null ? ` · mAP@0.5 ${Number(row.map50).toFixed(3)}` : ""}</b>
           </div>
         ))}
-        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Train with <span className="mono">python scripts/train_rdd.py</span>. We do not print a GitHub rival&apos;s mAP as ours.</p>
+        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Train with <span className="mono">python ml/scripts/train_rdd.py</span>. We do not print a GitHub rival&apos;s mAP as ours.</p>
       </div>
 
       <div className="card" style={{marginBottom:12}}>

@@ -9,8 +9,8 @@ Deployment RDD weight (TRACKED in git).
 
 Re-export (training host only):
 ```text
-.\.venv-train\Scripts\python.exe scripts\export_rdd_onnx.py
-.\.venv-train\Scripts\python.exe scripts\export_field_onnx.py
+.\.venv-train\Scripts\python.exe ml\scripts\export_rdd_onnx.py
+.\.venv-train\Scripts\python.exe ml\scripts\export_field_onnx.py
 ```
-Do NOT commit `models/road_damage/*.pt`, `models/road_damage/runs/`,
+Do NOT commit `ml/models/road_damage/*.pt`, `ml/models/road_damage/runs/`,
 root `yolov8*.pt`, or `weights/yolo26*` — those are training waste.

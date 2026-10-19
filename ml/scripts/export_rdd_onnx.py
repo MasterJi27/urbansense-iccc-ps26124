@@ -6,10 +6,10 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC_CANDIDATES = [
-    ROOT / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
-    ROOT / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
+    ROOT / "ml" / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
+    ROOT / "ml" / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
 ]
 DEST = ROOT / "backend" / "app" / "weights" / "rdd_india.onnx"
 

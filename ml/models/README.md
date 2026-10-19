@@ -6,7 +6,7 @@ RUN (no training needed):
 - `dashboard/public/weights/rdd_web.onnx` is NOT tracked. Vite copies the
   cloud ONNX there automatically at `npm run dev` / `npm run build`.
   `dashboard/public/weights/manifest.json` IS tracked.
-- `models/road_damage/metrics.json` + `backend/models/road_damage/metrics.json`
+- `ml/models/road_damage/metrics.json` + `backend/models/road_damage/metrics.json`
   are TRACKED honesty proofs (real val split on this host — never invent mAP).
 
 TRAIN (optional, gitignored — never pushed):
@@ -18,13 +18,13 @@ TRAIN (optional, gitignored — never pushed):
 - anpr/plate.pt                    (optional dedicated plate detector)
 
 ```text
-# one-time: official Figshare zip → .data/rdd_india/data.yaml (gitignored)
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py
-# RTX GPU fine-tune; writes models/road_damage/metrics.json from THIS val split
-.\.venv-train\Scripts\python.exe scripts\train_rdd.py --epochs 20
+# one-time: official Figshare zip → data/rdd_india/data.yaml (gitignored)
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_india.py
+# RTX GPU fine-tune; writes ml/models/road_damage/metrics.json from THIS val split
+.\.venv-train\Scripts\python.exe ml\scripts\train_rdd.py --epochs 20
 # publish to deploy paths (cloud ONNX + dashboard web ONNX + manifest)
-.\.venv-train\Scripts\python.exe scripts\export_rdd_onnx.py
-.\.venv-train\Scripts\python.exe scripts\export_field_onnx.py
+.\.venv-train\Scripts\python.exe ml\scripts\export_rdd_onnx.py
+.\.venv-train\Scripts\python.exe ml\scripts\export_field_onnx.py
 ```
 
 Fresh clone → run (Windows):

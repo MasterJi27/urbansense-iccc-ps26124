@@ -1,25 +1,25 @@
 """Download official RDD2022 and keep only the India split as Ultralytics YOLO.
 
 Source: Figshare 10.6084/m9.figshare.21431547 (CRDDC'2022, CC BY 4.0).
-Classes kept: D00 D10 D20 D40. No invented labels. Zip stays under .data/ (gitignored).
+Classes kept: D00 D10 D20 D40. No invented labels. Zip stays under data/ (gitignored).
 
-  python scripts/prepare_rdd_india.py
-  python scripts/prepare_rdd_india.py --zip D:\\path\\RDD2022_released_through_CRDDC2022.zip
+  python ml/scripts/prepare_rdd_india.py
+  python ml/scripts/prepare_rdd_india.py --zip D:\\path\\RDD2022_released_through_CRDDC2022.zip
 
-Honest-evaluation options (these never touch the frozen .data/rdd_india):
+Honest-evaluation options (these never touch the frozen data/rdd_india):
 
-  # NEW yaml in .data/rdd_india_grouped: neighbouring frames never straddle train/val/test
-  python scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-group
+  # NEW yaml in data/rdd_india_grouped: neighbouring frames never straddle train/val/test
+  python ml/scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-group
 
   # same, plus a hand-labelled phone/bus-windshield set as a never-trained-on test split
-  python scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-group \\
+  python ml/scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-group \\
       --field-test-dir D:\\field_windshield_set
 
   # are neighbouring filename ids really neighbouring frames? (run this first)
-  python scripts/prepare_rdd_india.py --skip-download --skip-extract --audit-neighbours
+  python ml/scripts/prepare_rdd_india.py --skip-download --skip-extract --audit-neighbours
 
-  # they are not (ids are shuffled): split look-alike clusters instead, in .data/rdd_india_simsplit
-  python scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
+  # they are not (ids are shuffled): split look-alike clusters instead, in data/rdd_india_simsplit
+  python ml/scripts/prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_ROOT = ROOT / ".data"
+ROOT = Path(__file__).resolve().parents[2]
+DATA_ROOT = ROOT / "data"
 ZIP_PATH = DATA_ROOT / "RDD2022_released_through_CRDDC2022.zip"
 EXTRACT = DATA_ROOT / "rdd2022_raw"
 LEGACY_OUT = DATA_ROOT / "rdd_india"  # frozen: the split every published metric so far was measured on

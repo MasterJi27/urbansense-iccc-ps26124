@@ -25,8 +25,8 @@ the field set below.
 ## 0. Check the tooling (no GPU, seconds)
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\eval_rdd.py --selftest
-.\.venv-train\Scripts\python.exe scripts\eval_rdd.py --data .data\rdd_india\data.yaml --split test --dry-run
+.\.venv-train\Scripts\python.exe ml\scripts\eval_rdd.py --selftest
+.\.venv-train\Scripts\python.exe ml\scripts\eval_rdd.py --data data\rdd_india\data.yaml --split test --dry-run
 ```
 
 `--dry-run` resolves the yaml, rewrites `path:` to the real folder (a `*.runtime.yaml` copy
@@ -37,7 +37,7 @@ beside it; the original is untouched) and counts images and label files.
 First weights file is the reference. This gives the table and **paired** CIs for the difference.
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\eval_rdd.py --weights models\road_damage\YOLOv8_Small_RDD.pt models\road_damage\YOLOv8s_RDD_india.pt --labels base tuned --data .data\rdd_india\data.yaml --split test --boot 1000
+.\.venv-train\Scripts\python.exe ml\scripts\eval_rdd.py --weights ml\models\road_damage\YOLOv8_Small_RDD.pt ml\models\road_damage\YOLOv8s_RDD_india.pt --labels base tuned --data data\rdd_india\data.yaml --split test --boot 1000
 ```
 
 Writes, next to the weights: `YOLOv8_Small_RDD_eval_test.json`, `YOLOv8s_RDD_india_eval_test.json`,
@@ -68,14 +68,14 @@ How to read it:
 First check that neighbouring filename ids really are neighbouring frames:
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py --skip-download --skip-extract --audit-neighbours
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_india.py --skip-download --skip-extract --audit-neighbours
 ```
 
-If it says they are, build the new dataset. This writes `.data\rdd_india_grouped` and never
-touches `.data\rdd_india`:
+If it says they are, build the new dataset. This writes `data\rdd_india_grouped` and never
+touches `data\rdd_india`:
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-group --group-size 30 --embargo 2
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-group --group-size 30 --embargo 2
 ```
 
 Whole blocks of 30 consecutive ids go to one split, and images within 2 ids of a val/test image are
@@ -97,8 +97,8 @@ most are the same spot of the same drive a few frames apart. Around 0.95 some pa
 same spot; at 0.93 they are different places. So:
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_hf.py --india-dir .data\rdd_india_simsplit --mix-dir .data\rdd_simsplit_mix
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-similarity
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_hf.py --india-dir data\rdd_india_simsplit --mix-dir data\rdd_simsplit_mix
 ```
 
 Images with cosine ≥ `--sim-thresh` (0.95) are linked, connected components stay in one split,
@@ -121,7 +121,7 @@ images (they measure false positives); a missing label file is refused unless yo
 More images means a narrower CI; the script warns when a class has under 30 instances.
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-group --field-test-dir D:\field_windshield_set
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_rdd_india.py --skip-download --skip-extract --split-by-group --field-test-dir D:\field_windshield_set
 ```
 
 This adds `images\field` + `labels\field` and `data_field.yaml` (same train/val, but
@@ -129,7 +129,7 @@ This adds `images\field` + `labels\field` and `data_field.yaml` (same train/val,
 weights on it:
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\eval_rdd.py --weights models\road_damage\YOLOv8_Small_RDD.pt models\road_damage\YOLOv8s_RDD_india.pt --labels base tuned --data .data\rdd_india_grouped\data_field.yaml --split test --tag field
+.\.venv-train\Scripts\python.exe ml\scripts\eval_rdd.py --weights ml\models\road_damage\YOLOv8_Small_RDD.pt ml\models\road_damage\YOLOv8s_RDD_india.pt --labels base tuned --data data\rdd_india_grouped\data_field.yaml --split test --tag field
 ```
 
 This writes `*_eval_field.json` and `eval_compare_field.md`, so the India results above are not overwritten. Both models are valid here: neither trained on the field set. Run this before anything else if
@@ -138,7 +138,7 @@ you have the labels, it is the number to quote.
 ## 4. Training with the new gate
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\train_rdd.py --data .data\rdd_india_grouped\data.yaml --epochs 25 --lr0 0.0001 --freeze 10 --class-balanced --field-data .data\rdd_india_grouped\data_field.yaml --name grouped_v1
+.\.venv-train\Scripts\python.exe ml\scripts\train_rdd.py --data data\rdd_india_grouped\data.yaml --epochs 25 --lr0 0.0001 --freeze 10 --class-balanced --field-data data\rdd_india_grouped\data_field.yaml --name grouped_v1
 ```
 
 - Promotion is decided on **val**: candidate val mAP50 must reach the shipped weights' val mAP50,
@@ -146,7 +146,7 @@ you have the labels, it is the number to quote.
   Ultralytics uses to pick `best.pt` and stop early, so it is a selection set too. A margin of
   about the CI half-width stops noise from promoting.
 - **Test is evaluated once**, on the promoted weights, after the decision. A rejected candidate is
-  never scored on test; it writes `models\road_damage\runs\<name>_gate.json` instead.
+  never scored on test; it writes `ml\models\road_damage\runs\<name>_gate.json` instead.
   `--skip-test` keeps the run off test entirely; `metrics.json` then says it is val-only.
 - `--field-data` scores the promoted weights once on the field set, stored as `field_test`.
 - `metrics.json` keeps its old keys (`map50`, `map50_95`, per-class `map50`) and gains `ci95`,
@@ -165,7 +165,7 @@ seen val, so moving away from it only loses memorised images. Training from COCO
 section 2 split avoids that:
 
 ```powershell
-.\.venv-train\Scripts\python.exe scripts\train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model yolov8m.pt --epochs 120 --batch 16 --workers 8 --optimizer SGD --lr0 0.01 --freeze 0 --cos-lr --close-mosaic 15 --patience 40 --class-balanced --domain-weight India_=2 --mixup 0.1 --name simsplit_v8m_coco --no-promote
+.\.venv-train\Scripts\python.exe ml\scripts\train_rdd.py --data data\rdd_simsplit_mix\data.yaml --model yolov8m.pt --epochs 120 --batch 16 --workers 8 --optimizer SGD --lr0 0.01 --freeze 0 --cos-lr --close-mosaic 15 --patience 40 --class-balanced --domain-weight India_=2 --mixup 0.1 --name simsplit_v8m_coco --no-promote
 ```
 
 - `--no-promote` skips the gate (comparing a clean model against the base's memorised val score
@@ -197,7 +197,7 @@ section 2 split avoids that:
 - Not shipped. A clean 0.44 is not evidence of beating the shipped weights, and YOLOv8m is about 2.7x the compute of
   YOLOv8s on the Azure CPU. `metrics.json` and `YOLOv8s_RDD_india.pt` were not touched (`--no-promote`).
 - The in-run scoring ran out of GPU memory right after training, before any test image was scored. Rerun it in a fresh
-  process: `train_rdd.py --data .data\rdd_simsplit_mix\data.yaml --model <best.pt> --eval-only --no-promote --name <run>`.
+  process: `train_rdd.py --data data\rdd_simsplit_mix\data.yaml --model <best.pt> --eval-only --no-promote --name <run>`.
   Correction (2026-10-19): a fresh process is not enough on its own. For the India fine-tune's `best.pt` val scored and
   the test split then ran out of memory in the fresh process too. PyTorch's allocator grows across evaluations (NMS at
   conf=0.001 asks for ~3 GB blocks; Windows shared GPU memory lets it pass 16 GB before failing). `report_candidate`

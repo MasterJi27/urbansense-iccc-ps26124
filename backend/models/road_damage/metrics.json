@@ -24,7 +24,7 @@
     "epochs": 25,
     "d10_train_repeat": 10
   },
-  "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
+  "weights": "ml/models/road_damage/YOLOv8s_RDD_india.pt",
   "classes": [
     {
       "id": "D00",

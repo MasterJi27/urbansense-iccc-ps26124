@@ -5,7 +5,7 @@
 **Stage:** Working barebone MVP / vertical slice (local demo)  
 **Repo:** `sih_winner_2026_prototype`
 
-**AI perception (boost adapters):** [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) · [boost/INTEGRATION_NOTES.md](boost/INTEGRATION_NOTES.md)
+**AI perception (boost adapters):** [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) · [third_party/INTEGRATION_NOTES.md](third_party/INTEGRATION_NOTES.md)
 
 This file is the single overview of **what the problem is, what we built, how it works, which technologies are used, what is real vs simulated, and how to run it**.
 
@@ -40,7 +40,7 @@ This is **not** “an AI pothole app.” Potholes are one event class. The produ
 | Closed loop | DETECT → VERIFY → WORK ORDER → REPAIR → RE-SENSE → RESOLVED or REOPENED |
 | Edge / bandwidth | Do not stream continuous video. Capture short evidence around events. Offline queue if the network is down. |
 | Adaptive devices | HIGH = edge AI, MEDIUM = lightweight edge, LOW = camera+GPS+IMU and cloud-assisted AI. |
-| Backend is source of truth | Flutter and React do not duplicate fusion, scoring, or work-order rules. |
+| Backend is source of truth | The phone web page and React do not duplicate fusion, scoring, or work-order rules. |
 
 ---
 
@@ -49,7 +49,7 @@ This is **not** “an AI pothole app.” Potholes are one event class. The produ
 ```mermaid
 flowchart TB
   subgraph clients
-    PHONE[Flutter — Sensor + Inspector]
+    PHONE[Phone browser — /field]
     WEB[React Command Center]
     FUTURE[Future: BUS CCTV / Road CCTV / IoT]
   end
@@ -75,27 +75,36 @@ PHONE / BUS CCTV / ROAD CCTV / IoT
 
 ```
 sih_winner_2026_prototype/
-├── backend/                 FastAPI API, fusion, seed, tests
+├── backend/                 FastAPI API, fusion, seed, tests. Also serves the built UI (static_dash)
 │   ├── app/
 │   │   ├── api/routes/      auth, fleet, events, assets, work orders, analytics, ingest, demo, ws
 │   │   ├── models/          SQLAlchemy tables
 │   │   ├── schemas/         Pydantic
 │   │   ├── services/        fusion, QR, road health, observations
 │   │   ├── realtime/        WebSocket hub
+│   │   ├── weights/         rdd_india.onnx, the deployed road-damage model
 │   │   └── seed.py          Demo data (separated from business logic)
 │   ├── tests/
 │   └── alembic/
-├── dashboard/               React + Vite command center
-├── mobile/                  Flutter sensor + inspector app
+├── dashboard/               React + Vite: ICCC command center and the /field phone page
 ├── ai/urbansense_ai/        Replaceable detector / OCR / tracker interfaces
+├── ml/                      Road-damage model work (see ml/README.md)
+│   ├── scripts/             prepare_*, train_rdd, eval_rdd, export_*, watch_training
+│   └── models/              weights, metrics.json, EVAL.md, training runs
+├── data/                    Datasets, not in git (see data/README.md)
+├── deploy/
+│   ├── azure/               package-azure.bat -> dist/azure/*.zip for App Service
+│   └── windows/             SadakSaarthi.exe launcher (source and build-exe.bat)
+├── infra/                   Azure Bicep (azure.yaml points here)
+├── third_party/             Reference repos used as a component library, not in git
 ├── shared/schemas/          Cross-client JSON sketches
-├── docs/                    Research mapping + future ingest
-├── storage/evidence/        Uploaded clips/images
+├── docs/                    Jury script, PS 26124 coverage, design notes, DEPLOYMENT.md
+├── scripts/                 start_demo.bat, build-ui.bat, run-*.cmd, backup-db, package-dashboard
+├── storage/evidence/        Uploaded clips/images (runtime)
 ├── docker-compose.yml       Postgres/PostGIS, Redis, MinIO, optional backend
-├── run-backend.cmd          Windows helper (no PowerShell activate)
-├── run-dashboard.cmd        Windows helper (npm.cmd)
 ├── .env.example
 ├── README.md                Run book
+├── PRODUCT.md, DESIGN.md    Product brief and design notes
 └── PROJECT.md               This document
 ```
 
@@ -129,23 +138,11 @@ sih_winner_2026_prototype/
 
 Pages: Login, Dashboard, Live Map, Fleet, Events, Event Investigation, Assets, Asset Passport, Road Health, Work Orders, Analytics, Sensor Nodes, Users, Settings.
 
-### 5.3 Mobile
+### 5.3 Phone (web)
 
-| Piece | Technology |
-| --- | --- |
-| App | Flutter (Dart 3.13 / Flutter 3.47) |
-| HTTP | `http` |
-| GPS | `geolocator` |
-| IMU | `sensors_plus` (Android/iOS; skipped on Windows) |
-| Camera | `camera` |
-| QR | `mobile_scanner` on phone; **paste payload** on Windows desktop |
-| Offline | JSON file via `path_provider` (survives app restart) |
-| Other | `battery_plus`, `connectivity_plus`, `shared_preferences` |
+The phone is a browser, not an installed app. The backend serves the `/field` page (React, `dashboard/src/field`). A bus phone opens it from the QR code or link, joins with the 6-digit PIN from the ICCC desk, sends camera stills, shows an on-device WASM preview and keeps an offline outbox until the network is back.
 
-Modes:
-
-- **Sensor mode** (operator): bind bus, trip, live view, emit/queue events, heartbeat, sync.  
-- **Inspector mode** (inspector/admin): QR, notes, manual event, repair evidence, verify/fail repair.
+The native Flutter app (`mobile/`) was retired on 2026-10-19. Its source stays in git history (`git checkout 44c0c75 -- mobile`).
 
 ### 5.4 AI layer (`ai/urbansense_ai`)
 
@@ -165,7 +162,7 @@ Interfaces (replaceable):
 | --- | --- |
 | Compose | `postgis/postgis:16-3.4`, Redis 7, MinIO, optional backend image |
 | Object storage | Local `storage/evidence` for MVP; MinIO in Compose for later |
-| Windows helpers | `run-backend.cmd`, `run-dashboard.cmd` |
+| Windows helpers | `SadakSaarthi.exe`, `scripts\start_demo.bat`, `scripts\build-ui.bat`, `scripts\run-*.cmd` |
 
 ---
 
@@ -339,13 +336,6 @@ End-to-end **vertical slice**, not a full production city platform.
 - Login, KPI overview, live map, event list + investigation (fusion visualization), fleet, assets/passport, road health, work orders + START DEMO, analytics, sensor cards, users, settings  
 - Dev proxy `/api` → `http://127.0.0.1:8000`  
 
-### Flutter
-
-- Login, sensor home (status, capability recommendation, trip, QR, sync)  
-- Live screen: camera if available, else placeholder; emit simulated pothole; offline queue  
-- Inspector: QR/manual payload, notes, repair/verify  
-- Windows desktop: does **not** crash if IMU/QR plugins are missing  
-
 ### AI
 
 - Interfaces + `SimulationDetector` / `SimulationOCR` (`DL01AB1234` @ 91%, flagged simulated)  
@@ -363,19 +353,18 @@ End-to-end **vertical slice**, not a full production city platform.
 | QR bus/asset/WO | **IMPLEMENTED** |
 | WebSocket alerts | **IMPLEMENTED** |
 | React command center pages | **IMPLEMENTED** |
-| Flutter sensor + inspector + offline queue | **IMPLEMENTED** |
 | Demo seed + START DEMO | **IMPLEMENTED** (simulated observations) |
 | Road health rules | **IMPLEMENTED** |
 | Sensor heartbeats | **IMPLEMENTED** |
 | PostgreSQL + PostGIS | **PARTIAL** (Compose ready; local demo often SQLite) |
-| Phone camera / GPS / IMU | **PARTIAL** (real plugins; Windows often UNAVAILABLE) |
+| Phone camera / GPS (`/field` web page) | **PARTIAL** (browser permissions; not field-validated) |
 | Vehicle counting / tracking | **REAL (validated)** — yolov8n + ByteTrack, IDs persist |
 | License-plate OCR | **REAL (validated)** — fast-plate-ocr global model on Indian plates |
 | Plate detection | **REAL (validated)** — fast-alpr YOLOv9-t, throttled per track |
 | Plate temporal vote | **RULE_BASED** — per-char weighted vote keyed by vehicle track |
 | Road-damage neural net | **REAL (validated)** — YOLOv8_Small_RDD, see docs/AI_INTEGRATION.md |
 | Traffic signs | **EXPERIMENTAL/DISABLED** — Turkish classes, no weights bundled |
-| Waterlogging | **SIMULATED** (no model in boost/) |
+| Waterlogging | **SIMULATED** (no model in third_party/) |
 | Speed | **EXPERIMENTAL** — uncalibrated homography |
 | Face / plate blur vision | **FUTURE** (flags + audit only) |
 | RTSP / MQTT live ingest | **FUTURE** (docs + HTTP stubs) |
@@ -424,31 +413,6 @@ cd dashboard
 
 Open the URL Vite prints (usually `http://localhost:5173`). Login `admin@urbansense.local` / `UrbanSense@2026`.
 
-Flutter:
-
-```bat
-cd mobile
-flutter run
-```
-
-On Android emulator set `--dart-define=API_BASE=http://10.0.2.2:8000`.  
-On Windows desktop use **DETECT / EMIT POTHOLE** and paste QR `urbansense://bus/BUS-042`.
-
-PostGIS (optional):
-
-```bat
-docker compose up -d postgres
-```
-
-Then set `DATABASE_URL=postgresql+psycopg://urbansense:urbansense@localhost:5432/urbansense`.
-
-Tests:
-
-```bat
-cd backend
-.\.venv\Scripts\pytest.exe -q
-```
-
 ---
 
 ## 18. Demo story (jury)
@@ -470,7 +434,6 @@ cd backend
 - SQLite has no PostGIS GIST indexes; distance is still haversine-correct.  
 - Route-delay analytics are **simulated** when real AVL trips are missing (UI labels this).  
 - Two Vite processes can land on **5174**; use one server and the `/api` proxy build.  
-- Flutter plugin install on Windows may need **Developer Mode** (symlinks).  
 
 ---
 

@@ -1,11 +1,11 @@
-"""Fine-tune YOLOv8 on RDD2022 India. Writes models/road_damage/metrics.json.
+"""Fine-tune YOLOv8 on RDD2022 India. Writes ml/models/road_damage/metrics.json.
 
 Honesty: this script does not invent mAP. If Ultralytics or the dataset is missing
 it exits with EXPERIMENTAL / evaluated=false. Classes stay D00/D10/D20/D40.
 
-  python scripts/train_rdd.py --data path/to/rdd_india.yaml --epochs 50
+  python ml/scripts/train_rdd.py --data path/to/rdd_india.yaml --epochs 50
 
-Evaluation protocol (see models/road_damage/EVAL.md):
+Evaluation protocol (see ml/models/road_damage/EVAL.md):
   * Promotion is decided on the VAL split only: the candidate's val mAP50 must reach the
     currently shipped weights' val mAP50 (re-measured now, on the same val images) plus
     --promote-margin.
@@ -28,12 +28,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # so `import eval_rdd` works from any cwd
 
-ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "models" / "road_damage"
+ROOT = Path(__file__).resolve().parents[2]
+OUT_DIR = ROOT / "ml" / "models" / "road_damage"
 METRICS = OUT_DIR / "metrics.json"
 BACKEND_METRICS = ROOT / "backend" / "models" / "road_damage" / "metrics.json"
 WEIGHTS = OUT_DIR / "YOLOv8_Small_RDD.pt"
-INDIA_YAML = ROOT / ".data" / "rdd_india" / "data.yaml"
+INDIA_YAML = ROOT / "data" / "rdd_india" / "data.yaml"
 INDIA_BEST = OUT_DIR / "YOLOv8s_RDD_india.pt"
 
 try:
@@ -288,14 +288,14 @@ def main() -> int:
     if not args.data and INDIA_YAML.is_file():
         args.data = str(INDIA_YAML)
     if not args.data:
-        return skip("No --data yaml. Run scripts/prepare_rdd_india.py first. Do not quote sivakanth/oracl4 mAP as UrbanSense.")
+        return skip("No --data yaml. Run ml/scripts/prepare_rdd_india.py first. Do not quote sivakanth/oracl4 mAP as UrbanSense.")
     data = Path(args.data)
     if not data.is_file():
         return skip(f"data yaml missing: {data}")
     if YOLO is None:
         return skip("ultralytics is not installed. pip install ultralytics in the training env.")
     if eval_rdd is None:
-        return skip("scripts/eval_rdd.py could not be imported (numpy / pyyaml missing in this env).")
+        return skip("ml/scripts/eval_rdd.py could not be imported (numpy / pyyaml missing in this env).")
 
     device = args.device or ("0" if _cuda() else "cpu")
     runtime_yaml, cfg = eval_rdd.materialize_data_yaml(data)
@@ -479,7 +479,7 @@ def main() -> int:
                 "keep": ["D00", "D10", "D20", "D40"],
             },
             "recipe": recipe,
-            "weights": "models/road_damage/YOLOv8s_RDD_india.pt",
+            "weights": "ml/models/road_damage/YOLOv8s_RDD_india.pt",
             "classes": classes,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }

@@ -11,7 +11,7 @@ Status legend: `REAL` / `RULE_BASED` / `EXPERIMENTAL` / `SIMULATED` / `DISABLED`
 | Missing dividers | GIS/BASELINE | Expected DIVIDER asset + ≥3 non-confirming passes/60 m → MISSING_DIVIDER | RULE_BASED | `services/asset_watch.py`, `POST /assets/{code}/passes`, `test_asset_watch.py` | Tune passes/radius per corridor | Post 3 passes for DIV-101 → event |
 | Missing zebra crossings | GIS/BASELINE | Same pattern → MISSING_ZEBRA | RULE_BASED | Same files | Same | Same for ZEBRA-101 |
 | Damaged/missing traffic signboards | GIS/BASELINE + DIRECT_PERCEPTION | Asset-watch → DAMAGED_SIGN; sign detector adapter exists but disabled (Turkish weights) | RULE_BASED / DISABLED | `asset_watch.ASSET_TO_EVENT`; `signs.py` (`enabled: false`) | Indian MoRTH sign model | Passes for SIGN-183 → event |
-| Waterlogging | SIMULATED | Event type + seed/demo path; no model in boost/ | SIMULATED | `GET /ai/capabilities` → waterlogging SIMULATED | Acquire/train a model | Show capabilities honesty |
+| Waterlogging | SIMULATED | Event type + seed/demo path; no model in third_party/ | SIMULATED | `GET /ai/capabilities` → waterlogging SIMULATED | Acquire/train a model | Show capabilities honesty |
 | Other road hazards | DIRECT_PERCEPTION + WORKFLOW | ROAD_OBSTRUCTION type via detector/inspector + work-order loop | REAL/WORKFLOW | EventType + fusion + WO lifecycle tests | — | Emit obstruction → WO → resolve |
 | Vehicle detection | DIRECT_PERCEPTION | yolov8n COCO + ByteTrack | REAL | bus 0.87 + persons; `test_vehicle_track_ids_persist` | Indian fleet taxonomy | bus.jpg / traffic video |
 | Vehicle classification | DIRECT_PERCEPTION | COCO taxonomy (car/bus/truck/motorcycle/bicycle) stored in track metadata | REAL (COCO) | `vehicles.py`, `mapping.vehicle_event` | State explicitly: NOT Indian-specific | Settings/capabilities note |
@@ -61,4 +61,4 @@ del urbansense.db
 REM start again -> DEMO_SEED_ON_START reseeds buses, SIGN-183/DIV-101/ZEBRA-101, trips, fusion pair
 ```
 
-Never delete code, `models/`, or `boost/`. Postgres users: drop/recreate the `urbansense` database instead.
+Never delete code, `ml/models/`, or `third_party/`. Postgres users: drop/recreate the `urbansense` database instead.

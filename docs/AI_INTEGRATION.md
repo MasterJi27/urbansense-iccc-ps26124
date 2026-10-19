@@ -1,6 +1,6 @@
 # AI integration (boost toolbox → UrbanSense) — VALIDATED
 
-UrbanSense remains the product. Repositories under `boost/` are a **local component library**. UIs, databases, and auth from those repos were **not** merged. Fusion, work orders, GIS and auth are untouched UrbanSense code.
+UrbanSense remains the product. Repositories under `third_party/` are a **local component library**. UIs, databases, and auth from those repos were **not** merged. Fusion, work orders, GIS and auth are untouched UrbanSense code.
 
 Validation pass ran real inference on CPU (Python 3.14, ultralytics 8.4.138, torch 2.14, opencv 5.0). Numbers below are measured, not claimed.
 
@@ -109,7 +109,7 @@ Tests: `cd backend && .\.venv\Scripts\python.exe -m pytest -q` (27 passed) · AI
 - COCO vehicle model is general, not Indian fleet-tuned.
 - Uncalibrated homography + moving dashcam ⇒ speed is **not** court-grade; UI labels it experimental.
 - Turkish signs if `best.pt` used; disabled without weights.
-- No waterlogging model in `boost/`.
+- No waterlogging model in `third_party/`.
 - ANPR is Tesseract-fallback only; `fast-alpr`/`fast-plate-ocr` deliberately deferred (extra onnx stack + model downloads for uncertain gain in this window).
 - `fast-plate-ocr` / FastALPR not added as a hard dependency (heavy). Tesseract fallback instead.
 - CPU YOLO is a few FPS; acceptable for this MVP. Road observations emit per frame (no throttle) — fusion groups them, but a busy camera posts often.
