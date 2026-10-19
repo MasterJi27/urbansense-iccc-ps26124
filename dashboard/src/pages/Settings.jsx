@@ -45,7 +45,7 @@ export default function Settings(){
       <div className="card" style={{ marginBottom: 12 }}>
         <h4>Capture — phones only</h4>
         <div className="stat-row"><span className="muted">ICCC laptop</span><b>This register. Control-room Chrome/Edge.</b></div>
-        <div className="stat-row"><span className="muted">Android</span><b>Chrome <span className="mono">/field</span> or Flutter <span className="mono">mobile/</span> — stills to Azure RDD + IMU.</b></div>
+        <div className="stat-row"><span className="muted">Android</span><b>Chrome <span className="mono">/field</span> — PIN, stills to Azure RDD. Boxes on the lens.</b></div>
         <div className="stat-row"><span className="muted">iPhone</span><b>Safari <span className="mono">/field</span> — PIN, stills to Azure RDD. Boxes on the lens.</b></div>
         <div className="stat-row"><span className="muted">Map</span><b>{s.azure_maps_enabled ? "Azure Maps road tiles via server proxy. Leaflet only draws the pins." : "Leaflet + OSM fallback — Azure Maps key not set on this host."}</b></div>
         <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Tiny UI change? Run <span className="mono">scripts/ship-ui.ps1</span>. Full <span className="mono">azd up</span> is only for infra. Last UI deploy is minutes, not an hour.</p>

@@ -36,7 +36,7 @@ class FieldBoothOut(BaseModel):
     expires_in: int
     redeemed: bool = False
     join_path: str = "/field"
-    note: str = "iPhone Safari opens /field, enters this PIN once, uses the phone camera. No Flutter install."
+    note: str = "iPhone Safari opens /field, enters this PIN once, uses the phone camera. No app install."
     bus_code: str | None = None
     joins: int = 0
     max_joins: int = 4

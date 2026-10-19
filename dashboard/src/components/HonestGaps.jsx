@@ -7,7 +7,7 @@ const GAPS = [
   { req: "Windshield boxes", now: "RULE_BASED", how: "On-device India RDD. Expanded road-band + far-lane ROI. Overlay is WASM; WebGPU only if ORT attaches. Official event is the Azure still. Not 1 ms Azure." },
   { req: "Cloud road-damage on stills", now: "REAL", how: "Azure App Service YOLOv8s 640 ONNX CPU. More cores help stills. Not a GPU stream. Cabin bay still cannot invent a road defect." },
   { req: "ICCC live desk", now: "REAL", how: "Phone pushes overlay ticks on /ws/field-live. Desk listens on /ws/live. Boxes now; official ticket after Azure still. Not 1 ms Azure. Composio is mail on FLEET_CONFIRMED only." },
-  { req: "Flutter windshield", now: "REAL", how: "Same /field page in a WebView. Not a second detector." },
+  { req: "Native phone app", now: "DISABLED", how: "Retired. Every phone uses the /field page in Chrome or Safari. Nothing to install. One detector, not two." },
   { req: "Pedestrian count this frame", now: "DISABLED", how: "COCO person net is off on /field. School VRU is geofence + speed, not a child detector." },
   { req: "Shake / rash from phone IMU", now: "RULE_BASED", how: "Accelerometer spike. Fast + shake → RASH_DRIVING. Slow + shake → pothole hit." },
   { req: "Fleet confirm (USP)", now: "RULE_BASED", how: "Second independent bus in 40 m / 6 h confirms. One phone cannot close a city ticket." },
