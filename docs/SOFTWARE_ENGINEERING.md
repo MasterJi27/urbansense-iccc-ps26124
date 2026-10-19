@@ -1,5 +1,7 @@
 # Software engineering approaches — UrbanSense
 
+> **Retired design (2026-10-19).** The native Flutter app (`mobile/`) was removed. The phone flow is now the `/field` web page (QR or link, 6-digit PIN, camera stills, offline outbox). This document describes the retired native app and is kept as history. The Flutter source is in git history: `git checkout 44c0c75 -- mobile`.
+
 SIH 2026 · BEL PS 26124  
 This note is the engineering README for the PPT / jury: **how we build**, not only which libraries we import.
 
