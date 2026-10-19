@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,6 +30,12 @@ if not settings.is_development and settings.secret_key in {"dev-only-change-me",
 if settings.secret_key in {"dev-only-change-me", "change-me-to-a-long-random-string"}:
     logging.getLogger("urbansense").warning("SECRET_KEY is the demo default. Fine for local jury demo only.")
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    on_startup()  # defined below; resolved when the server starts
+    yield
+
+
 _docs = "/docs" if settings.is_development else None
 app = FastAPI(
     title="SadakSaarthi API",
@@ -37,6 +44,7 @@ app = FastAPI(
     docs_url=_docs,
     redoc_url="/redoc" if settings.is_development else None,
     openapi_url="/openapi.json" if settings.is_development else None,
+    lifespan=lifespan,
 )
 
 _cors_regex = r"http://(localhost|127\.0\.0\.1):\d+" if settings.is_development else None
@@ -86,7 +94,6 @@ async def unhandled_error(request: Request, exc: Exception):
     )
 
 
-@app.on_event("startup")
 def on_startup():
     global engine, SessionLocal
     from sqlalchemy.exc import OperationalError
@@ -100,6 +107,12 @@ def on_startup():
         Base.metadata.create_all(bind=engine)
         ensure_pg_enum_values(engine)
     except OperationalError:
+        if not settings.is_development:
+            # A silent SQLite fallback would bring the site up empty, with its data on a disk Azure can wipe.
+            logging.getLogger("urbansense").critical(
+                "Database unreachable and APP_ENV is not development: refusing to fall back to a local SQLite file."
+            )
+            raise
         url = "sqlite+pysqlite:///./urbansense.db"
         engine = create_engine(url, **_engine_kwargs(url))
         SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

@@ -40,7 +40,11 @@ def test_rdd_weights_present_and_classes():
     det = Yolov8RoadDamageDetector()
     assert det.model is not None
     assert det.ai_status == REAL
-    assert list(det.model.names.values()) == RDD_CLASSES
+    # RDD_CLASSES are display names looked up by class id. The shipped India fine-tune stores the RDD2022 codes as its
+    # class names, the oracl4 base stores the long names. Either is right as long as the four ids line up.
+    names = list(det.model.names.values())
+    assert len(names) == len(RDD_CLASSES)
+    assert names in (RDD_CLASSES, ["D00", "D10", "D20", "D40"])
 
 
 def test_rdd_real_photo_detection():
@@ -105,18 +109,20 @@ def test_capabilities_report_honestly(client, admin_token):
     r = client.get("/ai/capabilities", headers=auth_header(admin_token))
     assert r.status_code == 200
     caps = r.json()
+    # /ai/capabilities is the slim cloud contract since the Azure ICCC split: the RDD engine plus the Azure and
+    # Composio switches. The per-requirement honesty statuses moved to /ai/ps26124, so they are checked there.
     assert caps["road_damage"]["ai_status"] == REAL
-    assert caps["vehicles"]["ai_status"] == REAL
-    assert caps["tracking"]["ai_status"] == REAL
-    assert caps["speed"]["ai_status"] == EXPERIMENTAL
-    assert caps["speed"]["calibrated"] is False
-    assert caps["waterlogging"]["ai_status"] == SIMULATED
-    assert caps["traffic_signs"]["enabled"] is False
-    assert caps["congestion"]["ai_status"] == RULE_BASED
-    assert caps["indian_plate_format"]["ai_status"] == RULE_BASED
-    assert caps["plate_detection"]["ai_status"] == REAL
-    assert caps["ocr"]["ai_status"] == REAL
-    assert caps["temporal_voting"]["ai_status"] == RULE_BASED
+    for key in ("azure_vision", "azure_openai", "azure_content_safety", "azure_stack", "rdd_eval", "composio", "note"):
+        assert key in caps
+    cov = client.get("/ai/ps26124", headers=auth_header(admin_token))
+    assert cov.status_code == 200
+    status = {row["id"]: row["status"] for row in cov.json()["items"]}
+    assert status["potholes"] == REAL
+    assert status["anpr"] == REAL
+    assert status["waterlogging"] == SIMULATED
+    assert status["signs"] == "DISABLED"
+    assert status["bottlenecks"] == RULE_BASED
+    assert status["od"] == SIMULATED
 
 
 def test_vehicle_track_ids_persist():
