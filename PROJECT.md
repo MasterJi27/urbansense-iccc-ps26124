@@ -140,7 +140,7 @@ Pages: Login, Dashboard, Live Map, Fleet, Events, Event Investigation, Assets, A
 
 ### 5.3 Phone (web)
 
-The phone is a browser, not an installed app. The backend serves the `/field` page (React, `dashboard/src/field`). A bus phone opens it from the QR code or link, joins with the 6-digit PIN from the ICCC desk, sends camera stills, shows an on-device WASM preview and keeps an offline outbox until the network is back.
+The phone is a browser, not an installed app. The backend serves the `/field` page (React, `dashboard/src/field`). A bus phone opens it from the QR code or link, joins with the 6-digit PIN from the ICCC desk, sends camera stills, shows an on-device WASM preview, reads the accelerometer for rule-based shake events (`phone-imu-shake`: at 45 km/h or more it files RASH_DRIVING, otherwise POTHOLE) and keeps an offline outbox until the network is back.
 
 The native Flutter app (`mobile/`) was retired on 2026-10-19. Its source stays in git history (`git checkout 44c0c75 -- mobile`).
 
