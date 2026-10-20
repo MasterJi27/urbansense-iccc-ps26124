@@ -22,6 +22,7 @@ _DROP_KEYS = {
     "subscription-key",
     "subscription_key",
     "azure_maps_subscription_key",
+    "map_tile_url",
     "database_url",
     "connection_string",
 }

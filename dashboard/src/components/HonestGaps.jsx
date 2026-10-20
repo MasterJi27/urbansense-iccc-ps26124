@@ -35,11 +35,11 @@ export default function HonestGaps() {
       ].filter(Boolean).join(" "),
     },
     {
-      req: "Azure Maps corridor tiles",
+      req: "Corridor map tiles",
       now: maps?.enabled ? "REAL" : "RULE_BASED",
       how: maps?.enabled
-        ? "Server-proxied Azure Maps road tiles. Detection is not Azure Maps."
-        : "OSM fallback — Azure Maps key not set. Detection is not Azure Maps.",
+        ? `Server-proxied ${maps.provider || "Azure Maps"} road tiles. Detection is not a map service.`
+        : "OSM fallback — no map provider key set. Detection is not a map service.",
     },
   ];
   return (

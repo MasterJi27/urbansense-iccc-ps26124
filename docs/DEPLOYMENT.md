@@ -46,6 +46,7 @@ Do not change App Settings while a deploy is running. The Oryx build restarts an
 | `PUBLIC_BASE_URL` | Base URL used in links and QR codes | the site's https URL |
 | `EVIDENCE_DIR` or `AZURE_STORAGE_*` | Where evidence images go. A folder inside the deployed app can be replaced by the next deploy | Blob storage |
 | `TRUSTED_PROXY_HOPS` | Reverse proxies in front of the app. Unset means 1 outside development | leave unset on App Service |
+| `MAP_TILE_URL`, `MAP_TILE_PROVIDER`, `MAP_TILE_ATTRIBUTION` | Tiles from any provider through the server-side proxy. The key inside the URL stays on the server. Optional: unset means OpenStreetMap in the browser. Do not rely on OSM for a public site (its policy forbids heavy use) | a provider key in Key Vault, if you want your own tiles |
 | `DPDP_RETENTION_DAYS` | Evidence retention | 30 (default) |
 
 ### Demo switches (read this before real users)

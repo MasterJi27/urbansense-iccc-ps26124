@@ -59,6 +59,12 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AZURE_MAPS_SUBSCRIPTION_KEY", "AZURE_MAPS_KEY"),
     )
+    # Optional: tiles from any raster provider. A URL template with {z} {x} {y} (and optionally {s} {r}); put the provider
+    # key inside the URL itself. The server fetches the tiles, so the key never reaches the browser. It wins over the
+    # Azure Maps key. Unset: OpenStreetMap, drawn by the browser. Only the tiles change, not the place names.
+    map_tile_url: str = ""
+    map_tile_provider: str = ""  # label shown in the UI; defaults to the URL's host name
+    map_tile_attribution: str = ""  # shown on the map: plain text, or <a href="https://..."> links
     composio_api_key: str = ""
     composio_notify_to: str = ""
     composio_notify_channel: str = "gmail"

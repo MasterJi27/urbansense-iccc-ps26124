@@ -159,6 +159,24 @@ Vite copies `backend/app/weights/rdd_india.onnx` → `dashboard/public/weights/r
 
 Run uvicorn `--host 0.0.0.0`. On the phone open `http://<this-PC-LAN-IP>:8000/field` after packaging the dashboard into `backend/static_dash`, **or** use the Vite origin if the phone can reach `:5173` and the `/api` proxy.
 
+### Maps (optional)
+
+No key is needed. Without one the dashboard draws **OpenStreetMap** tiles in the browser (internet required). OSM's tile policy forbids heavy use, so use it for testing and light demos, not for a public site.
+
+To use another provider, put its raster tile URL template in `backend\.env` and restart the backend (the URL below is only an example: copy the exact one from your provider's dashboard):
+
+```
+MAP_TILE_URL=https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=YOUR_KEY
+MAP_TILE_PROVIDER=MapTiler
+MAP_TILE_ATTRIBUTION=<a href="https://www.maptiler.com/copyright/">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap contributors</a>
+```
+
+- The template needs `{z}`, `{x}` and `{y}` (`{s}` and `{r}` are optional). Put the key itself in the URL.
+- The **server** fetches the tiles. The browser only sees `/maps/tiles/...?ticket=...`, so the key never reaches it, and it is masked in logs.
+- Make the key without an HTTP-referrer restriction (the server sends no referrer). Credit the provider in `MAP_TILE_ATTRIBUTION`: plain text or `https` links, anything else is escaped.
+- Order: `MAP_TILE_URL`, then `AZURE_MAPS_SUBSCRIPTION_KEY`, then OpenStreetMap. A template that cannot be used is ignored, and `/maps/config` says why.
+- Only tiles change. Place names (`/maps/place`) still need an Azure Maps key.
+
 ### 4. Tests
 
 ```bash

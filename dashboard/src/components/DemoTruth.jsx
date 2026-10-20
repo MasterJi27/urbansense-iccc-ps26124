@@ -20,7 +20,7 @@ export default function DemoTruth({ events = [], realEngines }) {
         {realEngines != null && (
           <> {realEngines} backend engines are <span className="tag real">REAL</span> (RDD on stills).</>
         )}
-        {" "}Map tiles are {maps?.enabled ? <b>Azure Maps</b> : <b>OSM fallback</b>}. Detection is not Azure Maps.
+        {" "}Map tiles are {maps?.enabled ? <b>{maps.provider || "Azure Maps"}</b> : <b>OSM fallback</b>}. Detection is not a map service.
       </div>
     </div>
   );

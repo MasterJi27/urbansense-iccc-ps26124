@@ -17,8 +17,9 @@ export function useCorridorTiles() {
     ready: cfg != null,
     enabled,
     url: tileUrl,
-    attribution: enabled ? "&copy; Azure Maps" : "&copy; OpenStreetMap",
-    caption: enabled ? "Azure Maps" : "Leaflet + OSM (Azure Maps key not set)",
+    // The server names the provider and says how to credit it (MAP_TILE_URL, MAP_TILE_ATTRIBUTION). Azure Maps is the default.
+    attribution: enabled ? cfg.attribution || `&copy; ${cfg.provider || "Azure Maps"}` : "&copy; OpenStreetMap",
+    caption: enabled ? cfg.provider || "Azure Maps" : "Leaflet + OSM (no map provider key set)",
     provider: cfg?.provider || "OpenStreetMap",
     honesty: cfg?.honesty || "RULE_BASED",
   };
