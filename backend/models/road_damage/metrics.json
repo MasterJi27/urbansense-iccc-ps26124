@@ -1,15 +1,16 @@
 {
   "honesty": "REAL",
   "evaluated": true,
-  "dataset": "RDD2022 India (CRDDC) \u2014 this host",
-  "note": "Held-out test after India RDD fine-tune (lr0=0.0001, freeze=10). Dataset is RDD2022 India (Delhi / Gurugram / Haryana). Twitter/Reddit comments were not used \u2014 they are unlabeled. Not a certified field accuracy. Waterlogging and Indian signs were not trained. Do not quote a rival mAP as ours. Train extras are Japan, Czech, United States, and China MotorBike from the official RDD2022 zip. India val and test stay frozen. Norway and China Drone were not mixed: Norway is a different climate and the drone view is not a bus windshield.",
-  "map50": 0.6244,
-  "map50_95": 0.3196,
+  "dataset": "RDD2022 India (CRDDC) test + Kent (UK) pothole holdout",
+  "note": "Deployed ONNX is pothole_opt_v2 best (epoch 15), exported from ml/models/road_damage/runs/pothole_opt_v2/weights/best.pt. India test is an in-distribution benchmark for base-derived models; the 70-photo Kent holdout is clean but is UK phone photography. No labelled Indian field set exists, so this is not certified field accuracy. Threshold remains 0.18; 0.30 is the recommended tuning point for precision.",
+  "map50": 0.6845,
+  "map50_95": 0.2933,
   "eval_split": "test",
   "split": {
-    "train": 16345,
-    "val": 331,
-    "test": 323,
+    "train": 16374,
+    "val": 322,
+    "test": 322,
+    "kent_holdout": 70,
     "seed": 42,
     "keep": [
       "D00",
@@ -19,41 +20,48 @@
     ]
   },
   "recipe": {
-    "lr0": 0.0001,
-    "freeze": 10,
-    "epochs": 25,
-    "d10_train_repeat": 10
+    "run": "pothole_opt_v2",
+    "base": "ml/models/road_damage/YOLOv8s_RDD_india.pt",
+    "epochs_completed": 45,
+    "selected_epoch": 15,
+    "selection_split": "kent_val",
+    "optimizer": "SGD",
+    "lr0": 0.001,
+    "batch": 16,
+    "imgsz": 640
   },
-  "weights": "ml/models/road_damage/YOLOv8s_RDD_india.pt",
+  "weights": "backend/app/weights/rdd_india.onnx",
+  "source_checkpoint": "ml/models/road_damage/runs/pothole_opt_v2/weights/best.pt",
+  "sha256": "649BBBDE79F75ED5E5CCB22AB5FFAA66E3B52A976A4094538B20CAD4EF0C305D",
   "classes": [
     {
       "id": "D00",
       "name": "Longitudinal crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.594,
+      "map50": 0.6419,
       "index": 0
     },
     {
       "id": "D10",
       "name": "Transverse crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.5285,
+      "map50": 0.7103,
       "index": 1
     },
     {
       "id": "D20",
       "name": "Alligator crack",
       "maps_to": "ROAD_DAMAGE",
-      "map50": 0.7726,
+      "map50": 0.7607,
       "index": 2
     },
     {
       "id": "D40",
       "name": "Pothole",
       "maps_to": "POTHOLE",
-      "map50": 0.6026,
+      "map50": 0.625,
       "index": 3
     }
   ],
-  "updated_at": "2026-10-05T11:50:50.769421+00:00"
+  "updated_at": "2026-11-04T13:07:52Z"
 }

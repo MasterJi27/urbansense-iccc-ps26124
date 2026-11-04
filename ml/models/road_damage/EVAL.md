@@ -209,6 +209,51 @@ section 2 split avoids that:
   0.421 [0.36, 0.56] against run 1's 0.448 / 0.443: no gain. Val fell from 0.452 at epoch 1 to about 0.40-0.42 while the
   training loss kept dropping, so it memorises the 2.6k Indian training images. Not shipped.
 
+### 4c. Pothole photos the RDD data lacks (2026-10-20, data prepared, not trained)
+
+The deployed model finds 58% of the labelled India test potholes at conf 0.18 (precision 68%; this is the best case, it saw
+those images), and on a clear close-up water-filled pothole it answers "alligator crack" 0.44 with a pothole score of 0.06.
+Shrinking the same photo raised the pothole score (0.06, 0.12, 0.18, 0.26 at 100%, 70%, 50%, 35% size). The cause is the
+training data: an RDD2022 pothole box covers a median **0.6%** of the image (4,945 boxes in the clean train split), the
+University of Kent photos **7.9%**. It was not the decode: class-agnostic against per-class NMS found 146 against 145 potholes.
+
+`prepare_pothole_extra.py` adds those photos to a copy of the mix (`data/rdd_simsplit_pothole_mix`, the base mix is not changed):
+
+```powershell
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_pothole_extra.py --src kent=data\pothole_kent\raw --dry-run
+.\.venv-train\Scripts\python.exe ml\scripts\prepare_pothole_extra.py --src kent=data\pothole_kent\raw
+```
+
+- Kent (CC BY 4.0, UK roads): 713 photos, 50 exact duplicates dropped, 4 broken boxes (outside the image) dropped, leaving
+  663 photos: 593 in train (933 boxes) and 70 in `data_kent_holdout.yaml` (137 boxes, blocks of 10 consecutive photos, never
+  trained on). All map to D40. No photo equals a val or test image (checked by hash).
+- The holdout checks that the model learned this kind of photo. It is UK photos, so it is not field evidence; only your own
+  labelled phone photos (section 3) say how it does on Indian roads.
+- These photos label potholes only, so cracks in them count as background. Keep the RDD images in training and watch D00/D10/D20
+  on the same test before and after (paired), or the model may learn to ignore cracks.
+- Run `pothole_ft_v1` (2026-10-20): from `YOLOv8s_RDD_india.pt` (not the default `--model`, which is the oracl4 base), `--data data\rdd_simsplit_pothole_mix\data.yaml
+  --domain-weight pothole_=2 --class-balanced --lr0 0.002 --freeze 10 --epochs 30 --batch 16 --workers 8 --cos-lr --close-mosaic 5
+  --patience 12 --no-promote`. Early stopping watches India val, which the shipped model has memorised, so val fell from epoch 1 and
+  the run stopped at epoch 14 (33 min). `best.pt` is therefore epoch 1, barely trained on the new photos; `last.pt` is epoch 14. Score
+  `last.pt`, not `best.pt`. Only these two were saved.
+- Result, paired bootstrap over images (`eval_compare_pothole_kent.md`, `eval_compare_pothole_india.md`):
+
+  | split | model | AP50 D40 | mAP50 |
+  |---|---|---|---|
+  | Kent holdout, 70 photos never trained on | shipped | 0.256 [0.16, 0.37] | |
+  | | epoch 1 | 0.525 [0.40, 0.64] | |
+  | | epoch 14 | **0.635** [0.51, 0.75] (+0.379, CI excludes 0) | |
+  | India test (the shipped model has seen it) | shipped | 0.658 | 0.704 |
+  | | epoch 14 | 0.633 (-0.025, n.s.) | 0.665 (-0.039, n.s.) |
+
+  D00 -0.011 and D20 -0.014 on the India test are also inside the noise (D10 has 4 boxes). mAP50-95 fell by 0.047 (CI excludes 0): its
+  boxes are a little looser. The close-up photo `pothole_big.jpg` (not byte-identical to any Kent photo) went from "D20 0.67" to "D40 0.52".
+- Read it carefully: the Kent holdout is the same dataset and country as the training photos, blocks of consecutive photos may still look
+  like a training neighbour, so +0.38 is a best case. The India drop is measured against a model that memorised those images. Neither is
+  a field number. `last.pt` also wants a higher confidence (F1-optimal 0.27 on India test, 0.41 on Kent, against 0.19 for the shipped
+  model), so the deployed 0.18 would raise false alarms. Pick the new threshold on val, not test.
+- Not shipped. Next: export `last.pt` to ONNX, run it through the backend decode, choose the threshold on val, then score the field set.
+
 ## 5. `copy_paste` does nothing here
 
 `train_rdd.py` passes `copy_paste=0.2`. Ultralytics' `CopyPaste` pastes instance **masks**, and its
@@ -220,6 +265,27 @@ Treat it as off: do not credit it for any result and do not tune it. Check on yo
 ```powershell
 .\.venv-train\Scripts\python.exe -c "import inspect, ultralytics.data.augment as a; print(inspect.getsource(a.CopyPaste.__call__))"
 ```
+
+## 6. `pothole_opt_v2` — selection on a clean Kent split (2026-11-02)
+
+v1 failed because it selected on India val, which the base checkpoint had memorised (`best.pt` was
+epoch 2 of 14). v2 keeps the same data but carves an 80-photo D40 validation split out of the Kent
+training photos in whole 20-photo blocks, with a 10-photo embargo, and selects on that.
+
+| model | Kent holdout D40 AP50 | India test D40 AP50 | India val D40 AP50 |
+|---|---:|---:|---:|
+| shipped | 0.256 [0.16, 0.37] | 0.658 [0.60, 0.71] | 0.663 [0.61, 0.72] |
+| v1 epoch 14 | 0.635 [0.51, 0.75] | 0.633 [0.57, 0.69] | 0.631 [0.57, 0.69] |
+| **v2 best (epoch 15)** | **0.659 [0.53, 0.77]** | 0.625 [0.57, 0.69] | 0.645 [0.59, 0.71] |
+| v2 last (epoch 45) | 0.647 [0.52, 0.76] | 0.619 [0.56, 0.69] | 0.647 [0.59, 0.71] |
+
+v2 vs shipped, paired bootstrap: Kent D40 AP50 **+0.404 [+0.305, +0.492]**; India test D40 AP50
+−0.033 [−0.071, +0.009] (n.s.). Training early-stopped at epoch 45 (best 15 + patience 30), 163 min
+on an RTX 4060. Exported and deployed as a model-only ONNX swap on 2026-11-04 after 70/70 decoded
+detections matched PyTorch; backend tests passed. Threshold stayed at 0.18, and there is still no
+labelled Indian field set. See `docs/MODEL_OPTIMIZATION_REPORT.md` section 15.
+
+Full report: `docs/MODEL_OPTIMIZATION_REPORT.md`.
 
 ## Known gaps
 

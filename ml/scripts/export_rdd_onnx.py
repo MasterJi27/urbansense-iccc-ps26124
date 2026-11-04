@@ -1,4 +1,4 @@
-"""Export the India RDD weights to ONNX for Azure CPU (no PyTorch on App Service)."""
+"""Export the deployed pothole-opt_v2 weights to ONNX for Azure CPU (no PyTorch on App Service)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC_CANDIDATES = [
+    ROOT / "ml" / "models" / "road_damage" / "runs" / "pothole_opt_v2" / "weights" / "best.pt",
     ROOT / "ml" / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
     ROOT / "ml" / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
 ]
