@@ -11,6 +11,9 @@ _PATTERNS = (
     re.compile(r"(password['\"]?\s*[:=]\s*)\S+", re.I),
     re.compile(r"(postgresql(?:\+\w+)?:\/\/[^:]+:)[^@]+", re.I),
     re.compile(r"(AZURE_MAPS_SUBSCRIPTION_KEY['\"]?\s*[:=]\s*)\S+", re.I),
+    re.compile(r"(MAP_TILE_URL['\"]?\s*[:=]\s*)\S+", re.I),
+    # Tile providers take their key as a query parameter, so a logged upstream URL would carry it.
+    re.compile(r"([?&](?:key|api[_-]?key|access_token|token)=)[^&\s]+", re.I),
 )
 
 

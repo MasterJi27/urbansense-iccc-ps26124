@@ -1,0 +1,17 @@
+# What `COPY . .` in the Dockerfile must NOT put into the image.
+# Secrets and local state: docker compose passes .env at run time, it is never baked into a layer.
+.env
+.env.*
+*.db
+*.sqlite
+*.log
+
+# The Windows virtualenv is useless in a Linux image (1.3 GB). The Dockerfile runs pip install itself.
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+
+# Not needed to run the API.
+tests

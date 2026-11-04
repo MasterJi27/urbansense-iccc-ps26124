@@ -45,9 +45,9 @@ export default function Settings(){
       <div className="card" style={{ marginBottom: 12 }}>
         <h4>Capture — phones only</h4>
         <div className="stat-row"><span className="muted">ICCC laptop</span><b>This register. Control-room Chrome/Edge.</b></div>
-        <div className="stat-row"><span className="muted">Android</span><b>Chrome <span className="mono">/field</span> or Flutter <span className="mono">mobile/</span> — stills to Azure RDD + IMU.</b></div>
+        <div className="stat-row"><span className="muted">Android</span><b>Chrome <span className="mono">/field</span> — PIN, stills to Azure RDD + phone IMU (shake). Boxes on the lens.</b></div>
         <div className="stat-row"><span className="muted">iPhone</span><b>Safari <span className="mono">/field</span> — PIN, stills to Azure RDD. Boxes on the lens.</b></div>
-        <div className="stat-row"><span className="muted">Map</span><b>{s.azure_maps_enabled ? "Azure Maps road tiles via server proxy. Leaflet only draws the pins." : "Leaflet + OSM fallback — Azure Maps key not set on this host."}</b></div>
+        <div className="stat-row"><span className="muted">Map</span><b>{s.map_provider && s.map_provider !== "OpenStreetMap" ? `${s.map_provider} road tiles via server proxy. Leaflet only draws the pins.` : s.azure_maps_enabled ? "Azure Maps road tiles via server proxy. Leaflet only draws the pins." : "Leaflet + OSM fallback — no map provider key set on this host."}</b></div>
         <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Tiny UI change? Run <span className="mono">scripts/ship-ui.ps1</span>. Full <span className="mono">azd up</span> is only for infra. Last UI deploy is minutes, not an hour.</p>
       </div>
 
@@ -76,7 +76,7 @@ export default function Settings(){
             <b>{row.maps_to}{row.map50 != null ? ` · mAP@0.5 ${Number(row.map50).toFixed(3)}` : ""}</b>
           </div>
         ))}
-        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Train with <span className="mono">python scripts/train_rdd.py</span>. We do not print a GitHub rival&apos;s mAP as ours.</p>
+        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>Train with <span className="mono">python ml/scripts/train_rdd.py</span>. We do not print a GitHub rival&apos;s mAP as ours.</p>
       </div>
 
       <div className="card" style={{marginBottom:12}}>

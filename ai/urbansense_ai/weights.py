@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-MODELS = ROOT / "models"
+MODELS = ROOT / "ml" / "models"
 
 RDD_URL = "https://github.com/oracl4/RoadDamageDetection/raw/main/models/YOLOv8_Small_RDD.pt"
 RDD_PATH = MODELS / "road_damage" / "YOLOv8_Small_RDD.pt"
@@ -71,7 +71,7 @@ def resolve_signs() -> Path | None:
         return Path(env)
     if SIGN_PATH.exists():
         return SIGN_PATH
-    nested = ROOT / "boost" / "TrafficSignRecognition-master" / "TrafficSignRecognition-master" / "yolov5_model" / "weights" / "best.pt"
+    nested = ROOT / "third_party" / "TrafficSignRecognition-master" / "TrafficSignRecognition-master" / "yolov5_model" / "weights" / "best.pt"
     return nested if nested.exists() else None
 
 

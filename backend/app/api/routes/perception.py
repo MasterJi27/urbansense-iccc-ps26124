@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models.event import EventType, Severity, SourceType
+from app.models.event import EventType, SourceType
 from app.models.user import User
 from app.schemas.common import ObservationIn
 from app.services.azure_edge import (
@@ -16,7 +17,7 @@ from app.services.azure_edge import (
     azure_vision_status,
     read_still,
 )
-from app.services.bbox_severity import severity_from_boxes
+from app.services.bbox_severity import severity_for_detection
 from app.services.composio_notify import composio_status
 from app.services.model_metrics import load_model_metrics
 from app.services.observations import ingest_observation, publish_event, save_evidence_bytes
@@ -65,10 +66,10 @@ async def analyze_frame(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     name = file.filename or "frame.jpg"
     try:
-        url = save_evidence_bytes(name, data)
+        url = await run_in_threadpool(save_evidence_bytes, name, data)
     except Exception as exc:
         return {"ok": False, "error": f"evidence store failed: {exc}"}
-    rdd = detect_rdd(data)
+    rdd = await run_in_threadpool(detect_rdd, data)
     detections = rdd.get("detections") or []
     top = top_event(detections)
     if top is None:
@@ -92,14 +93,10 @@ async def analyze_frame(
         "detections": detections,
         "derivation": "Azure-hosted RDD YOLO. Same engine as /ingest/phone/still.",
     }
-    boxes = [{"x1": d["bbox"][0], "y1": d["bbox"][1], "x2": d["bbox"][2], "y2": d["bbox"][3]} for d in detections if d.get("bbox")]
-    if boxes:
-        graded = severity_from_boxes(boxes, frame_w=1, frame_h=1)
-        extra["bbox_severity"] = {k: (v.value if hasattr(v, "value") else v) for k, v in graded.items()}
-        extra["severity_honesty"] = "RULE_BASED"
-        sev = graded["severity"]
-    else:
-        sev = Severity(top["severity"])
+    graded = severity_for_detection(top)
+    extra["bbox_severity"] = {k: (v.value if hasattr(v, "value") else v) for k, v in graded.items()}
+    extra["severity_honesty"] = "RULE_BASED"
+    sev = graded["severity"]
     typed, note = apply_camera_bay(EventType(top["event_type"]), camera_bay)
     if note:
         extra["derivation"] = note
@@ -115,7 +112,7 @@ async def analyze_frame(
         evidence_url=url,
         extra=extra,
     )
-    obs, event, created = ingest_observation(db, obs_in, actor_id=user.id)
+    obs, event, created = await run_in_threadpool(ingest_observation, db, obs_in, actor_id=user.id)
     background.add_task(publish_event, event, created)
     return {
         "ok": True,

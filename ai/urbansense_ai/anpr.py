@@ -1,6 +1,6 @@
 """UrbanSense ANPR engine: fast-alpr plate detection + fast-plate-ocr reading.
 
-Source (MIT): boost/Automatic_Number_Plate_Recognition_YOLO_OCR-main/.../src/anpr
+Source (MIT): third_party/Automatic_Number_Plate_Recognition_YOLO_OCR-main/.../src/anpr
 (detector/fast_alpr.py, ocr/fast_plate.py, postprocess/temporal.py).
 Deliberately NOT reused: api/ (FastAPI server), storage/, tracker/iou.py
 (UrbanSense already has ByteTrack), postprocess/turkish.py + confusion.py

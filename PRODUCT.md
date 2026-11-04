@@ -18,7 +18,7 @@ Use this file for PPT slides. Engineering runbook: [README.md](README.md) · Jur
 | ICCC desk `/` | Depot / ICCC officer | JWT login |
 | Phone booth `/field` | Windshield phone | 6-digit PIN from the desk |
 
-Do not open `/field` on the same browser as the ICCC login. Flutter, if used, loads the same `/field` page. It is not a second detector.
+Do not open `/field` on the same browser as the ICCC login.
 
 ---
 

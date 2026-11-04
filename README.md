@@ -8,7 +8,7 @@ Public-transport vehicles are **mobile sensing units**. FastAPI is the source of
 
 **USP:** Fleet confirms presence. Fleet also confirms absence. One bus can do neither.
 
-Visible wordmark is **SADAKSAARTHI**. Login emails, Azure hostname (`app-urbansense-yngmbk`), and Flutter package name still say `urbansense` — those are identifiers, not a second product.
+Visible wordmark is **SADAKSAARTHI**. Login emails and the Azure hostname (`app-urbansense-yngmbk`) still say `urbansense` — those are identifiers, not a second product.
 
 This is **not** “AI pothole detection.” Potholes are one event class in a multi-source evidence platform.
 
@@ -28,7 +28,6 @@ This is **not** “AI pothole detection.” Potholes are one event class in a mu
 
 - ICCC has no FIELD / CCTV nav. `/cctv` redirects to Overview.
 - An ICCC JWT is **not** a field token. A field token cannot open ICCC (`4403` on `/ws/field-live` if you send the wrong scope).
-- Flutter, if used, loads the same `/field` page. It is not a second detector.
 
 ---
 
@@ -107,6 +106,12 @@ QR examples: `urbansense://bus/BUS-042` · `urbansense://asset/ASSET-001` · `ur
 
 ## Quick start (local)
 
+### 0. One click (Windows)
+
+Double-click **`SadakSaarthi.exe`** in the repo root. It starts the backend, waits until it answers and opens http://127.0.0.1:8000/ (dashboard, `/field`, `/docs`). Close its window or press Q to stop. Logs go to `logs\backend.log`.
+
+One-time setup: create `backend\.venv` (step 1) and build the UI once with `scripts\build-ui.bat`. Rebuild the exe with `deploy\windows\build-exe.bat`. Prefer a console? `scripts\start_demo.bat` does the same with checks and also takes `dev` (Vite dev server) and `camera`.
+
 ### 1. Backend
 
 Windows PowerShell often blocks `activate.ps1`. Call the venv executable:
@@ -116,7 +121,7 @@ cd backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Or double-click `run-backend.cmd` in the repo root.
+Or run `scripts\run-backend.cmd`.
 
 ```bash
 cd backend
@@ -127,7 +132,7 @@ copy ..\.env.example .env
 
 OpenAPI: http://127.0.0.1:8000/docs · Health: http://127.0.0.1:8000/health (`rdd` should be `REAL` when `backend/app/weights/rdd_india.onnx` is present).
 
-No training needed on a fresh clone: the deploy ONNX (`backend/app/weights/rdd_india.onnx`, YOLOv8s 640 CPU) and the honesty `metrics.json` files are tracked in git. Training weights (`models/**/*.pt`, `runs/`, `.data/`) are gitignored — see [models/README.md](models/README.md) to reproduce them.
+No training needed on a fresh clone: the deploy ONNX (`backend/app/weights/rdd_india.onnx`, YOLOv8s 640 CPU) and the honesty `metrics.json` files are tracked in git. Training weights (`models/**/*.pt`, `runs/`, `data/`) are gitignored — see [models/README.md](models/README.md) to reproduce them.
 
 If Docker Desktop is running:
 
@@ -154,15 +159,23 @@ Vite copies `backend/app/weights/rdd_india.onnx` → `dashboard/public/weights/r
 
 Run uvicorn `--host 0.0.0.0`. On the phone open `http://<this-PC-LAN-IP>:8000/field` after packaging the dashboard into `backend/static_dash`, **or** use the Vite origin if the phone can reach `:5173` and the `/api` proxy.
 
-Flutter (optional WebView of the same booth):
+### Maps (optional)
 
-```bash
-cd mobile
-flutter pub get
-flutter run --dart-define=API_BASE=http://10.0.2.2:8000
+No key is needed. Without one the dashboard draws **OpenStreetMap** tiles in the browser (internet required). OSM's tile policy forbids heavy use, so use it for testing and light demos, not for a public site.
+
+To use another provider, put its raster tile URL template in `backend\.env` and restart the backend (the URL below is only an example: copy the exact one from your provider's dashboard):
+
+```
+MAP_TILE_URL=https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=YOUR_KEY
+MAP_TILE_PROVIDER=MapTiler
+MAP_TILE_ATTRIBUTION=<a href="https://www.maptiler.com/copyright/">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap contributors</a>
 ```
 
-Windows desktop camera/GPS/IMU are often missing. Use an Android device or `/field` in the phone browser.
+- The template needs `{z}`, `{x}` and `{y}` (`{s}` and `{r}` are optional). Put the key itself in the URL.
+- The **server** fetches the tiles. The browser only sees `/maps/tiles/...?ticket=...`, so the key never reaches it, and it is masked in logs.
+- Make the key without an HTTP-referrer restriction (the server sends no referrer). Credit the provider in `MAP_TILE_ATTRIBUTION`: plain text or `https` links, anything else is escaped.
+- Order: `MAP_TILE_URL`, then `AZURE_MAPS_SUBSCRIPTION_KEY`, then OpenStreetMap. A template that cannot be used is ignored, and `/maps/config` says why.
+- Only tiles change. Place names (`/maps/place`) still need an Azure Maps key.
 
 ### 4. Tests
 
@@ -177,14 +190,25 @@ npm run build
 
 ## Ship to Azure
 
-```powershell
-# packages dashboard → backend/static_dash, then azd deploy (not azd up)
-scripts\ship-ui.ps1
+One click, nothing is deployed for you:
+
+```bat
+deploy\azure\package-azure.bat
 ```
+
+It builds the dashboard, runs the backend tests (stops if one fails) and writes `dist\azure\sadaksaarthi-api-<time>.zip` with a `.sha256` next to it. The zip holds only `backend/app`, `alembic`, the built UI (`static_dash`), the RDD ONNX and `requirements.txt`. `.env`, `*.db`, `.venv` and `tests` are never in it, and the script refuses to write the zip if one slips in. At the end it prints the exact command to deploy that zip:
+
+```powershell
+az webapp deploy --resource-group rg-urbansense --name app-urbansense-yngmbk --src-path dist\azure\<the zip> --type zip
+# or let azd package and deploy it itself:
+azd deploy api
+```
+
+`scripts\ship-ui.ps1` is the older azd-only path (packages the dashboard, then `azd deploy`, not `azd up`). Full checklist, app settings and the production switches: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 - App Service `app-urbansense-yngmbk`, plan B3 (4 CPU / 7 GB, Always On), RG `rg-urbansense`, Southeast Asia.
 - Do **not** change App Settings in parallel with a deploy (Oryx restart mid-build → 503).
-- After ship: `/health` → `ok`, `rdd: REAL`; `/weights/manifest.json` → `imgsz: 640`.
+- After deploy: `/health` → `ok`, `rdd: REAL`; `/weights/manifest.json` → `imgsz: 640`.
 - Stop `rg-urbansense` after the demo so student credits do not drain.
 
 A GPU sidecar (Container Apps T4) is **not** in this stack. App Service cannot grow CUDA. See the honesty table.
@@ -206,7 +230,6 @@ A GPU sidecar (Container Apps T4) is **not** in this stack. App Service cannot g
 - Assets (digital passport) + QR lookup
 - Work orders + repair verification
 - Sensor heartbeats (`POST /sensor-nodes/heartbeat`)
-- Offline-first Flutter queue (JSON file) when the native app is used
 - Local backup: `scripts\backup-db.ps1` (pg_dump for Postgres, file copy for SQLite)
 - Demo seed: buses including BUS-042 / BUS-017, events, assets, work orders
 - Privacy: restricted evidence flags, masked plates, audit logs (blur pipeline is **planned**)
@@ -225,24 +248,31 @@ A GPU sidecar (Container Apps T4) is **not** in this stack. App Service cannot g
 | Cloud RDD | `onnxruntime` CPU, `rdd_india.onnx` |
 | Phone RDD | `rdd_web.onnx` (copy of the same family), WASM |
 | Infra | Azure Bicep + `azd` (`azure.yaml`) |
-| Optional native | Flutter WebView of `/field` |
 
 ---
 
 ## Folder structure
 
 ```
-backend/     FastAPI + packaged ICCC (`static_dash`) + RDD weights
-dashboard/   React ICCC / field source
-mobile/      Flutter (same /field booth in a WebView)
-ai/          Local camera / RTSP helpers — not App Service GPU
-infra/       Azure Bicep
-docs/        Jury script + PS coverage
-scripts/     package-dashboard, ship-ui, backup-db, train/export weights, local demo
-shared/      Cross-client schemas
+backend/        FastAPI API. Also serves the built dashboard and /field (backend/static_dash)
+dashboard/      React source: ICCC desk and the /field phone page
+ai/             Perception package (road damage, ANPR, vehicles) and local camera helpers
+infra/          Azure Bicep (azure.yaml at the root points here)
+deploy/
+  azure/        package-azure.bat -> dist/azure/*.zip for App Service
+  windows/      SadakSaarthi.exe launcher: source and build-exe.bat
+ml/             Everything for the road-damage model
+  scripts/      prepare_*, train_rdd, eval_rdd, export_*, watch_training
+  models/       weights, metrics.json, EVAL.md, training runs (weights are not in git)
+data/           Datasets (25 GB, not in git). See data/README.md
+third_party/    Reference repos used as a component library (not in git)
+docs/           Jury script, PS 26124 coverage matrix, design notes
+scripts/        Dev helpers: start_demo.bat, build-ui.bat, run-*.cmd, backup-db, package-dashboard
+shared/         Cross-client JSON schemas
+assets/         Demo images (plates)
+storage/        Runtime evidence (not in git)
+SadakSaarthi.exe   Built by deploy\windows\build-exe.bat (not in git)
 ```
-
----
 
 ## API (selected)
 

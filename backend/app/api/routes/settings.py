@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.config import get_settings
 from app.deps import require_roles
 from app.models.user import User, UserRole
+from app.services.map_tiles import tile_source
 from app.services.model_metrics import load_model_metrics
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -22,6 +23,7 @@ def get_public_settings(_: User = Depends(require_roles(UserRole.ADMIN))):
         "app_env": s.app_env,
         "allow_lan_camera_pull": s.allow_lan_camera_pull,
         "azure_maps_enabled": bool(s.azure_maps_subscription_key.strip()),
+        "map_provider": tile_source().provider,
         "demo_api_enabled": s.demo_api_enabled,
         "docs_enabled": s.is_development,
         "rdd_eval": load_model_metrics(),

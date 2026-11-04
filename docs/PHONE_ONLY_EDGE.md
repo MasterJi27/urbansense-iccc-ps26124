@@ -1,5 +1,7 @@
 # Phone-Only Edge — PS 26124 Without Extra Hardware
 
+> **Retired design (2026-10-19).** The native Flutter app (`mobile/`) was removed. The phone flow is now the `/field` web page (QR or link, 6-digit PIN, camera stills, accelerometer shake rules, offline outbox). This document describes the retired native app and is kept as history. The Flutter source is in git history: `git checkout 44c0c75 -- mobile`.
+
 > Constraint: edge device = ONLY mobile phone (low-end 2GB also must work).
 > Principle: NO heavy GUI, NO continuous video, NO YOLO on phone. Phone = sensor + trigger, backend = intelligence.
 > Problem Statement 26124 is the source of truth — every PS clause maps below.

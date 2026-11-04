@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     field_token_expire_minutes: int = 45
     algorithm: str = "HS256"
     demo_api_enabled: bool = True
+    # How many reverse proxies in front of the app append to X-Forwarded-For (Azure App Service = 1).
+    # Unset: 1 outside development (App Service front end), 0 in development/test where uvicorn is hit directly.
+    # 0 means X-Forwarded-For is ignored and the socket peer is the client.
+    trusted_proxy_hops: int | None = Field(default=None, ge=0)
 
     database_url: str = "postgresql+psycopg://urbansense:urbansense@localhost:5432/urbansense"
     redis_url: str = "redis://localhost:6379/0"
@@ -55,6 +59,12 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AZURE_MAPS_SUBSCRIPTION_KEY", "AZURE_MAPS_KEY"),
     )
+    # Optional: tiles from any raster provider. A URL template with {z} {x} {y} (and optionally {s} {r}); put the provider
+    # key inside the URL itself. The server fetches the tiles, so the key never reaches the browser. It wins over the
+    # Azure Maps key. Unset: OpenStreetMap, drawn by the browser. Only the tiles change, not the place names.
+    map_tile_url: str = ""
+    map_tile_provider: str = ""  # label shown in the UI; defaults to the URL's host name
+    map_tile_attribution: str = ""  # shown on the map: plain text, or <a href="https://..."> links
     composio_api_key: str = ""
     composio_notify_to: str = ""
     composio_notify_channel: str = "gmail"
@@ -72,6 +82,12 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env.strip().lower() in {"development", "test", "testing"}
+
+    @property
+    def effective_trusted_proxy_hops(self) -> int:
+        if self.trusted_proxy_hops is not None:
+            return self.trusted_proxy_hops
+        return 0 if self.is_development else 1
 
 
 @lru_cache

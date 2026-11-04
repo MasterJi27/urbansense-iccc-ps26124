@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
 
+import re
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -14,6 +18,28 @@ from app.services.audit import audit
 from app.services.observations import publish_event
 
 router = APIRouter(tags=["work-orders"])
+
+_CODE_RE = re.compile(r"^WO-(\d+)$")
+_CODE_ATTEMPTS = 5
+# Only POST /work-orders/{id}/verify may close or fail a work order, because it also moves the event and publishes.
+_VERIFY_ONLY = {WorkOrderStatus.RESOLVED, WorkOrderStatus.FAILED}
+
+
+def _find_wo(db: Session, wo_id: str) -> WorkOrder | None:
+    """UUID or public code (WO-001), the same lookup for every route."""
+    return db.get(WorkOrder, wo_id) or db.query(WorkOrder).filter(WorkOrder.public_code == wo_id).first()
+
+
+def _next_code(db: Session) -> str:
+    """One past the highest existing WO-NNN. count()+1 repeats a live code after any delete."""
+    top = db.scalar(
+        select(WorkOrder.public_code)
+        .where(WorkOrder.public_code.like("WO-%"))
+        .order_by(func.length(WorkOrder.public_code).desc(), WorkOrder.public_code.desc())
+        .limit(1)
+    )
+    match = _CODE_RE.match(top or "")
+    return f"WO-{(int(match.group(1)) if match else 0) + 1:03d}"
 
 
 def _out(wo: WorkOrder) -> dict:
@@ -59,19 +85,30 @@ def create_wo(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.ADMIN, UserRole.INSPECTOR)),
 ):
-    n = db.query(WorkOrder).count() + 1
-    code = f"WO-{n:03d}"
-    wo = WorkOrder(
-        public_code=code,
-        event_id=body.event_id,
-        asset_id=body.asset_id,
-        title=body.title,
-        description=body.description,
-        assignee_id=body.assignee_id,
-        status=WorkOrderStatus.ASSIGNED if body.assignee_id else WorkOrderStatus.PENDING,
-        qr_payload=f"urbansense://work-order/{code}",
-    )
-    db.add(wo)
+    # Two creates can read the same max; the unique public_code/qr_payload makes the loser retry.
+    for _ in range(_CODE_ATTEMPTS):
+        code = _next_code(db)
+        wo = WorkOrder(
+            public_code=code,
+            event_id=body.event_id,
+            asset_id=body.asset_id,
+            title=body.title,
+            description=body.description,
+            assignee_id=body.assignee_id,
+            status=WorkOrderStatus.ASSIGNED if body.assignee_id else WorkOrderStatus.PENDING,
+            qr_payload=f"urbansense://work-order/{code}",
+        )
+        try:
+            with db.begin_nested():
+                db.add(wo)
+        except IntegrityError as exc:
+            detail = str(exc.orig)
+            if "public_code" in detail or "qr_payload" in detail:
+                continue
+            raise HTTPException(400, "Work order references an unknown event, asset or assignee") from exc
+        break
+    else:
+        raise HTTPException(503, "Could not allocate a work order code. Retry.")
     if body.event_id:
         ev = db.get(UrbanEvent, body.event_id)
         if ev:
@@ -85,7 +122,7 @@ def create_wo(
 
 @router.get("/work-orders/{wo_id}")
 def get_wo(wo_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    wo = db.get(WorkOrder, wo_id) or db.query(WorkOrder).filter(WorkOrder.public_code == wo_id).first()
+    wo = _find_wo(db, wo_id)
     if not wo:
         raise HTTPException(404, "Work order not found")
     return _out(wo)
@@ -98,9 +135,11 @@ def patch_wo(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.ADMIN, UserRole.INSPECTOR)),
 ):
-    wo = db.get(WorkOrder, wo_id)
+    wo = _find_wo(db, wo_id)
     if not wo:
         raise HTTPException(404, "Work order not found")
+    if body.status in _VERIFY_ONLY:
+        raise HTTPException(400, f"Use POST /work-orders/{wo.public_code}/verify to set {body.status.value}")
     if body.status:
         wo.status = body.status
     if body.assignee_id:
@@ -122,7 +161,7 @@ def submit_repair(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.INSPECTOR, UserRole.ADMIN)),
 ):
-    wo = db.get(WorkOrder, wo_id) or db.query(WorkOrder).filter(WorkOrder.public_code == wo_id).first()
+    wo = _find_wo(db, wo_id)
     if not wo:
         raise HTTPException(404, "Work order not found")
     wo.repair_notes = body.notes
@@ -151,7 +190,7 @@ def verify_repair(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.INSPECTOR, UserRole.ADMIN)),
 ):
-    wo = db.get(WorkOrder, wo_id) or db.query(WorkOrder).filter(WorkOrder.public_code == wo_id).first()
+    wo = _find_wo(db, wo_id)
     if not wo:
         raise HTTPException(404, "Work order not found")
     wo.verify_notes = body.notes
