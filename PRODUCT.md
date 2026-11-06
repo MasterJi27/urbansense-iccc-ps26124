@@ -30,7 +30,7 @@ Do not open `/field` on the same browser as the ICCC login.
 | --- | --- | --- |
 | Official pothole / crack ticket | **REAL** | Phone JPEG → Azure App Service → YOLOv8s 640 ONNX **CPU** (India RDD D00/D10/D20/D40) |
 | Windshield overlay boxes | **RULE_BASED** preview | On-device WASM (`rdd_web.onnx`). Official event is the Azure still |
-| Held-out test | mAP@0.5 **0.6189** | 323-image India RDD split. Not certified field accuracy |
+| Held-out test | D40 AP50 **0.6250** · 4-class mAP50 **0.6845** | 322-image India RDD test split. In-distribution, not certified field accuracy |
 | AUTO capture | shipped | Default **on detect** (rising edge). Still + short clip; no tap needed |
 | Fleet confirm / expire / repair-verify | **RULE_BASED** | Second bus in **40 m / 6 h**. Later clear passes expire rumours or verify repair |
 | Five camera bays | **REAL** contract | FRONT / REAR / LEFT / RIGHT / CABIN. Cabin **never** scores a road defect |
@@ -66,7 +66,7 @@ BEL asks for edge analysis and **no continuous video**. We keep that. We only le
 
 ## What else we will add (eight items)
 
-Realistic, countable, no new circus of models. India RDD **0.6189** stays the promotion floor.
+Realistic, countable, no new circus of models. India RDD **0.6250 D40 AP50** stays the promotion floor.
 
 1. **One-minute event clip** — as above. Pre-event buffer + 60 s after. One Blob object per event.
 2. **Speed-breaker immunity** — pin known breakers/rumbles on the demo corridor. RDD pothole *on* that pin + no IMU pothole-hit → **do not** open a ticket.

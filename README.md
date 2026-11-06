@@ -1,97 +1,89 @@
-# SadakSaarthi
+<div align="center">
 
-SIH 2026 · BEL problem statement **26124** · Delhi ICCC command register
+<img src="assets/readme/hero.svg" alt="SadakSaarthi — every bus is a road scanner. Every ticket needs a second witness." width="100%" />
 
-Public-transport vehicles are **mobile sensing units**. FastAPI is the source of truth. React is the ICCC desk. The windshield is a phone browser on `/field` (Chrome or Safari). Fusion, work orders, and honesty labels live only in the API.
+<br />
+
+**Public transport is the sensor fleet. The ICCC desk is the ledger.**
+
+[Live demo](https://app-urbansense-yngmbk.azurewebsites.net/) · [8-minute jury walk](docs/JURY_8MIN.md) · [Model report](docs/MODEL_OPTIMIZATION_REPORT.md) · [Product brief](PRODUCT.md) · [Full project document](PROJECT.md)
+
+<br />
+
+![SIH 2026](https://img.shields.io/badge/SIH-2026-C45C26?style=flat-square)
+![BEL PS 26124](https://img.shields.io/badge/BEL%20PS-26124-1F3A5F?style=flat-square)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
+![YOLOv8s](https://img.shields.io/badge/YOLOv8s-ONNX%20CPU-FF6F00?style=flat-square)
+![Azure](https://img.shields.io/badge/Azure-App%20Service-0078D4?style=flat-square&logo=microsoftazure&logoColor=white)
+![Tests](https://img.shields.io/badge/backend%20tests-234%20passed-2EA043?style=flat-square)
+
+</div>
+
+> [!IMPORTANT]
+> **One bus can raise a report. One bus cannot close it.**
+> A second independent bus must see the same defect within **40 m and 6 hours** before ICCC treats it as confirmed. The same bus, the same phone, and the cabin camera do not count twice.
+
+---
+
+## The 30-second version
+
+| | |
+| --- | --- |
+| **What** | A city road-intelligence platform built on the public buses already on the road. |
+| **How** | Windshield phone → one JPEG → Azure CPU YOLOv8s → fused `UrbanEvent` → second-bus confirmation → work order → repair verification. |
+| **Why it is different** | Fleet confirmation, one official cloud still, a closed repair loop, and a truth label on every payload. |
+| **Proof** | Kent holdout D40 AP50 **0.6591** vs **0.2555** shipped · **187/187** ONNX detections matched · **234** backend tests passing. |
+| **Status** | Working SIH 2026 prototype. Honest about what is simulated. No labelled Indian field set yet. |
+
+---
+
+## Why this exists
+
+Cities already own the buses, the drivers, the routes, and the inspection staff. What they do not have is one trustworthy chain from **a thing a bus saw** to **a municipal action**.
+
+SadakSaarthi builds that chain. Every scheduled bus becomes a mobile sensing unit. A phone on the windshield watches the road and sends one still when it sees damage. Azure scores the official image. The backend fuses sightings into one event, waits for a second independent bus, and closes the loop with a work order, a repair, and a re-sense.
+
+It is deliberately **not**:
+
+- continuous video uploaded to the cloud;
+- a single-frame “AI says pothole” accusation;
+- a dashboard that hides which numbers are real, seeded, or simulated;
+- another model demo with no repair workflow behind it.
+
+### Four design choices that matter
+
+1. **The fleet is the sensor, not one hero camera.**
+   A bus route gives repeat coverage for free. The same street is seen again tomorrow, and the day after.
+
+2. **One official still, scored on CPU.**
+   The phone overlay is a preview. The municipal record is the JPEG that Azure scores with YOLOv8s ONNX. No GPU, no video firehose, no 24×7 stream.
+
+3. **Confirmation is a state machine, not a confidence score.**
+   Two independent sources in the same 40 m / 6 h cell. A later clear pass can expire a rumour. After a repair, the next pass can verify it.
+
+4. **Honesty is part of the API.**
+   Every payload carries `ai_status`: `REAL`, `RULE_BASED`, `SEED`, `SIMULATED`, or `DISABLED`. The UI shows seed data and engine status separately.
+
+---
+
+## See it work
 
 **Live:** https://app-urbansense-yngmbk.azurewebsites.net/
 
-**USP:** Fleet confirms presence. Fleet also confirms absence. One bus can do neither.
+> [!NOTE]
+> The App Service is stopped between demos so student credits do not drain. If the URL returns `403`, start `rg-urbansense`; the first request after a cold start can take about 20 seconds. The full walk is in [docs/JURY_8MIN.md](docs/JURY_8MIN.md).
 
-Visible wordmark is **SADAKSAARTHI**. Login emails and the Azure hostname (`app-urbansense-yngmbk`) still say `urbansense` — those are identifiers, not a second product.
+### Five-minute tour
 
-This is **not** “AI pothole detection.” Potholes are one event class in a multi-source evidence platform.
+1. **ICCC desk** — open `/` and sign in as an officer.
+2. **Arm a phone** — Overview → **Arm PIN**. A QR or six-digit PIN appears.
+3. **Phone booth** — open `/field` on a phone, enter the PIN and bus number, allow camera and GPS, leave **AUTO — on detect** on.
+4. **First sighting** — point at a pothole or a printed photo. The phone overlay is a live preview; Azure files the official still. The event starts as `UNVERIFIED`.
+5. **Second witness** — a second independent bus in the same cell moves it to `FLEET_CONFIRMED`. Create a work order, mark the repair, and let the next pass verify it.
 
-**Product brief (PPT):** [PRODUCT.md](PRODUCT.md)  
-**Full project document:** [PROJECT.md](PROJECT.md)  
-**Engineering approaches:** [docs/SOFTWARE_ENGINEERING.md](docs/SOFTWARE_ENGINEERING.md)  
-**Jury walk:** [docs/JURY_8MIN.md](docs/JURY_8MIN.md)
-
----
-
-## Two surfaces (do not mix)
-
-| Surface | URL | Who | Auth |
-| --- | --- | --- | --- |
-| ICCC desk | `/` after officer login | Depot / ICCC | JWT (`admin@urbansense.local` …) |
-| Phone booth | `/field` | Windshield phone | 6-digit PIN from the desk |
-
-- ICCC has no FIELD / CCTV nav. `/cctv` redirects to Overview.
-- An ICCC JWT is **not** a field token. A field token cannot open ICCC (`4403` on `/ws/field-live` if you send the wrong scope).
-
----
-
-## What is real (honesty)
-
-Every payload carries `ai_status`: **REAL** / **RULE_BASED** / **SEED** / **SIMULATED** / **DISABLED**.
-
-| Piece | Label | What it actually is |
-| --- | --- | --- |
-| Official road-damage ticket | REAL | Azure App Service still → YOLOv8s 640 ONNX **CPU**, India RDD D00/D10/D20/D40, conf 0.18 |
-| Phone windshield boxes | RULE_BASED preview | On-device 640 India RDD (`rdd_web.onnx`). Road-band + full-frame merge + IoU tracker. Same weights, not a new test mAP |
-| Held-out test mAP@0.5 | 0.6244 | 323-image India RDD test split on this host (train 16345: India + Japan/Czech/US/China-MotorBike extras, India val/test frozen; lr0 0.0001, 25 epochs). D10 is noisy. Not certified field accuracy |
-| Live desk ticks | REAL transport | Phone `/ws/field-live` → ICCC `/ws/live` plus REST poll. Round-trip is tens of ms, **not 1 ms** |
-| Fleet confirm / absence expire | RULE_BASED | Second independent bus in 40 m / 6 h. Same bus cannot self-confirm |
-| Phone still gates | RULE_BASED | GPS accuracy worse than 25 m → `400`; outside the jury corridor (when set) → `400`; speed-breaker asset within 25 m → `409`, no pothole ticket |
-| Officer email | DISABLED until Gmail is connected | Composio mails only on `FLEET_CONFIRMED`. It is not a detector |
-| Officer SMS webhook | REAL when `OFFICER_SMS_WEBHOOK` is set, else DISABLED | Plain POST `{"text","event_id"}` on `FLEET_CONFIRMED`, independent of Gmail. Empty URL = off, ticket still saves |
-| App Service GPU | none | Linux App Service has no CUDA. Overlay is WASM (WebGPU only if ONNX Runtime attaches). Official still stays CPU unless a separate T4 host is added |
-| Indian MoRTH signs | DISABLED | GIS missing-sign geofence only |
-| Waterlogging net | SIMULATED | No flood model |
-| School-child classifier | RULE_BASED | School geofence + speed drop. No child detector |
-
-Do not quote a rival GitHub mAP as ours. Do not call Composio “the vision stack.”
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph phone [Phone Chrome or Safari]
-    LENS[Windshield /field]
-    WASM[ONNX WASM overlay]
-    LENS --> WASM
-  end
-  subgraph azure [Azure App Service B3]
-    API[FastAPI + static ICCC]
-    CPU[YOLOv8s 640 ONNX CPU]
-    PG[(Postgres or SQLite)]
-    API --> CPU
-    API --> PG
-  end
-  WASM -->|field JWT + boxes 250 ms| LIVE["/ws/field-live"]
-  LIVE --> HUB[hub channel live]
-  HUB --> DESK["ICCC /ws/live"]
-  LENS -->|JPEG still| STILL["POST /ingest/phone"]
-  STILL --> CPU
-  CPU -->|UrbanEvent| DESK
-```
-
-Backend owns fusion, work orders, health scores, and roles. Frontends display; they do not invent those rules.
-
----
-
-## Live demo (Azure)
-
-1. Laptop: open the live URL → sign in as ICCC admin.
-2. Overview → **Arm PIN** (QR / copy). Do not open `/field` on the same ICCC login.
-3. Phone: Chrome or Safari → `https://app-urbansense-yngmbk.azurewebsites.net/field` → PIN + bus number + AUTO.
-4. First overlay load can take 10–20 s (WASM + 640 weights). Hard-refresh if boxes never appear.
-5. Phone overlay ticks **LIVE FIELD** on Overview. Official ticket appears in Events after the Azure still.
-6. Second independent bus in 40 m / 6 h → `FLEET_CONFIRMED`. One phone cannot close a city ticket.
-
-Demo credentials (seeded, demonstration only):
+<details>
+<summary><strong>Local demo credentials (development only)</strong></summary>
 
 | Role | Email | Password |
 | --- | --- | --- |
@@ -100,50 +92,214 @@ Demo credentials (seeded, demonstration only):
 | INSPECTOR | `inspector@urbansense.local` | `UrbanSense@2026` |
 | OPERATOR | `operator@urbansense.local` | `UrbanSense@2026` |
 
-QR examples: `urbansense://bus/BUS-042` · `urbansense://asset/ASSET-001` · `urbansense://work-order/WO-001`
+These accounts work with `APP_ENV=development`. With `APP_ENV=production`, the login refuses the seeded password by design. The Azure jury host uses a private password; never commit it.
+
+</details>
 
 ---
 
-## Quick start (local)
+## Architecture
 
-### 0. One click (Windows)
+```mermaid
+flowchart LR
+  subgraph Phone["Windshield phone · /field"]
+    CAM["Camera + GPS"]
+    WASM["On-device ONNX WASM<br/>preview only"]
+    CAM --> WASM
+  end
 
-Double-click **`SadakSaarthi.exe`** in the repo root. It starts the backend, waits until it answers and opens http://127.0.0.1:8000/ (dashboard, `/field`, `/docs`). Close its window or press Q to stop. Logs go to `logs\backend.log`.
+  subgraph API["FastAPI · Azure App Service B3"]
+    ING["Ingest + still gates"]
+    RDD["YOLOv8s 640<br/>ONNX CPU"]
+    FUSE["Fusion engine<br/>40 m / 6 h · source diversity"]
+    EV[("UrbanEvent<br/>ledger")]
+    WS["WebSocket hub"]
+    ING --> RDD --> FUSE --> EV --> WS
+  end
 
-One-time setup: create `backend\.venv` (step 1) and build the UI once with `scripts\build-ui.bat`. Rebuild the exe with `deploy\windows\build-exe.bat`. Prefer a console? `scripts\start_demo.bat` does the same with checks and also takes `dev` (Vite dev server) and `camera`.
+  subgraph Desk["ICCC desk · /"]
+    MAP["Live map + event register"]
+    WO["Work orders + repair verification"]
+  end
+
+  CAM -->|JPEG + GPS| ING
+  WASM -.->|boxes, 250 ms| WS
+  WS --> MAP
+  EV --> WO
+```
+
+The backend is the source of truth. React and the phone display state; they do not invent fusion rules, roles, or work-order transitions.
+
+| Layer | What it owns | Where |
+| --- | --- | --- |
+| Phone | camera, GPS, on-device preview, offline outbox | `dashboard/src/field` |
+| API | auth, ingest, gates, fusion, work orders, audit, WebSocket | `backend/app` |
+| Official vision | YOLOv8s 640 ONNX CPU, D00/D10/D20/D40 | `backend/app/services/rdd_cloud.py` |
+| ICCC | React command register, map, analytics, print pack | `dashboard/src` |
+| Data | PostgreSQL/PostGIS, or SQLite for local demos | `backend/app/models` |
+| Infra | Linux App Service B3, Blob evidence, Bicep | `infra/` |
+
+### The confirmation ledger
+
+| Step | Trigger | What ICCC does |
+| --- | --- | --- |
+| `UNVERIFIED` | First sighting | Shows the event on the map. Does **not** dispatch. |
+| `FLEET_CONFIRMED` | Second independent bus in 40 m / 6 h | Moves the event into the work-order queue. |
+| `EXPIRED` | Enough later independent clear passes | Closes a rumour instead of sending a crew. |
+| `ASSIGNED` → `RE_VERIFICATION` | Work order → repair submitted | Waits for a verify still from the next pass. |
+| `RESOLVED` / `REOPENED` | Verify pass or fail | Closes the loop, or sends it back. |
+
+Same bus, same phone, and cabin camera never count as the second witness.
+
+---
+
+## What is real — and what is not
+
+Every API payload carries `ai_status`. This table is the short version of [docs/PS26124_COVERAGE_MATRIX.md](docs/PS26124_COVERAGE_MATRIX.md).
+
+| Capability | Label | What it actually is |
+| --- | --- | --- |
+| Official road-damage ticket | **REAL** | Phone JPEG → Azure CPU YOLOv8s 640 ONNX. D00/D10/D20/D40. One still per event. |
+| Phone windshield boxes | **RULE_BASED preview** | On-device `rdd_web.onnx` WASM. Road-band + IoU tracker. Same weights, not a new test mAP, not the municipal record. |
+| Fleet confirm / absence / repair verify | **RULE_BASED** | Second independent bus in 40 m / 6 h. Later clear passes expire a rumour or verify a repair. |
+| Still gates | **RULE_BASED** | GPS accuracy worse than 25 m → `400`; outside the jury corridor → `400`; speed-breaker asset within 25 m → `409`. |
+| ANPR / vehicle tracking | **REAL** (AI layer) | Plate + confidence + GPS + time; masked until ADMIN / INSPECTOR. Assists authorities, does not accuse. |
+| Live desk ticks | **REAL transport** | Phone `/ws/field-live` → ICCC `/ws/live` plus REST poll. Tens of milliseconds, not 1 ms. |
+| Officer email | **DISABLED** | Composio mails only on `FLEET_CONFIRMED`; needs Gmail OAuth and `COMPOSIO_NOTIFY_TO`. |
+| Officer SMS | **REAL when configured** | Plain webhook `POST {"text","event_id"}` on `FLEET_CONFIRMED`. Empty URL = off; the ticket still saves. |
+| Indian sign classifier | **DISABLED** | GIS missing-sign geofence only. No trained Indian sign net. |
+| Waterlogging | **SIMULATED** | No flood model. |
+| Person / child detector | **DISABLED** | School geofence + speed drop, not a child detector. |
+| App Service GPU | **none** | Linux B3 is CPU-only. The phone overlay is WASM. |
+
+> [!WARNING]
+> Do not quote a rival GitHub mAP as ours, and do not call Composio “the vision stack.” The official pothole ticket is the RDD ONNX still. Everything else is labelled.
+
+---
+
+## The model
+
+The deployed model is **`pothole_opt_v2`**, selected on a clean Kent pothole validation split and exported as a model-only ONNX swap on **4 November 2026**.
+
+| | |
+| --- | --- |
+| Architecture | YOLOv8s, 640 px, FP32 ONNX, decoded without NMS in the app |
+| Classes | D00 longitudinal crack · D10 transverse crack · D20 alligator crack · **D40 pothole** |
+| File | [`backend/app/weights/rdd_india.onnx`](backend/app/weights/rdd_india.onnx) |
+| SHA-256 | `649BBBDE79F75ED5E5CCB22AB5FFAA66E3B52A976A4094538B20CAD4EF0C305D` |
+| Runtime | `onnxruntime` CPU inside FastAPI |
+| Threshold | `CONF = 0.18` in production; **0.30** is the recommended tuning point once a labelled field set exists |
+| Export source | `ml/models/road_damage/runs/pothole_opt_v2/weights/best.pt` (epoch 15 of 45) |
+
+### Measured quality
+
+| Split | Model | D40 AP50 | 4-class mAP50 |
+| --- | --- | ---: | ---: |
+| Kent holdout, 70 photos, never selected or trained on | shipped | 0.2555 | — |
+| Kent holdout, 70 photos, never selected or trained on | **deployed v2** | **0.6591** | — |
+| India test, 322 images, in-distribution | shipped | 0.6577 | 0.7039 |
+| India test, 322 images, in-distribution | **deployed v2** | 0.6250 | **0.6845** |
+
+The gain is in the exact failure mode the experiment targeted: **big, close-up potholes**. On the 70-photo Kent holdout, D40 AP50 rose from **0.2555 to 0.6591** (+0.404, 95% CI +0.305 to +0.492). On the India test split, D40 AP50 moved from **0.6577 to 0.6250** (−0.033, 95% CI −0.071 to +0.009, not significant).
+
+> [!WARNING]
+> **This is not field accuracy.** India val/test overlap the base checkpoint’s training data. The Kent holdout is clean but is UK phone photography, not Indian roads. There is still no labelled Indian field set. Quote **0.6591** as evidence that close-up pothole transfer improved, not as a claim about Indian roads.
+
+### Export parity
+
+The production gate is **decoded-detection agreement**, not raw-tensor equality.
+
+| Check | Result |
+| --- | --- |
+| Images | 70 / 70 Kent holdout |
+| Decoded detections matched | 187 / 187 |
+| Worst matched IoU | 1.0000 |
+| Confidence delta | 0.0000 |
+| Raw tensor max abs diff | 0.0205 (expected CPU kernel difference) |
+
+<details>
+<summary><strong>Reproduce the export and parity check</strong></summary>
+
+```powershell
+.\.venv-train\Scripts\python.exe ml\scripts\export_rdd_onnx.py
+.\.venv-train\Scripts\python.exe ml\scripts\verify_onnx_parity.py `
+  --pt ml\models\road_damage\runs\pothole_opt_v2\weights\best.pt `
+  --onnx ml\models\road_damage\runs\pothole_opt_v2\weights\best.onnx `
+  --data data\rdd_pothole_opt_v2\data_kent_holdout.yaml --split test --limit 70
+.\.venv-train\Scripts\python.exe ml\scripts\export_field_onnx.py
+```
+
+Ultralytics embeds an export date in ONNX metadata, so a re-export changes the checksum even when the graph weights are unchanged. Use the parity check, not the checksum alone, to decide whether a re-export is equivalent.
+
+</details>
+
+The full experiment, including v1/v2 selection, bootstrap intervals, and the deployment record, is in [docs/MODEL_OPTIMIZATION_REPORT.md](docs/MODEL_OPTIMIZATION_REPORT.md). The evaluation log is [ml/models/road_damage/EVAL.md](ml/models/road_damage/EVAL.md).
+
+---
+
+## Features
+
+| ICCC desk | Field phone |
+| --- | --- |
+| Live map, event register, fusion view, heatmap | Browser camera and GPS, no app install |
+| Work orders, repair submit/verify, re-sense prompt | 6-digit PIN + bus binding, phone-scoped JWT |
+| Assets, digital passports, QR lookup | On-device ONNX preview with box tracker |
+| Fleet, five camera bays, sensor heartbeats | AUTO still + short clip on detect, offline outbox, retry |
+| Analytics, honest labels, print incident pack | Repair-due verify prompt within 40 m |
+| Citizen report bridge and claim tickets | Field-live ticks to the ICCC desk |
+
+**Platform**
+
+- Observation vs fused `UrbanEvent`
+- Deterministic spatial-temporal fusion (40 m / 6 h, source diversity; not averaged confidence)
+- JWT + roles: `SUPER_ADMIN`, `ADMIN`, `INSPECTOR`, `OPERATOR`; field PIN scope
+- Still gates: GPS accuracy, jury corridor, speed-breaker immunity
+- CSV export for field tickets; seed rows skipped
+- Local backup helper for PostgreSQL and SQLite
+- Privacy flags, masked plates, audit logs; face/plate blur is **planned**
+- Docker Compose for PostGIS, Redis, and MinIO; SQLite fallback for demos
+
+---
+
+## Quick start
+
+**Fresh clone needs no training.** The deploy ONNX and honesty `metrics.json` files are tracked in git. Training weights (`*.pt`, runs, datasets) are gitignored.
+
+**Prerequisites:** Python 3.12+, Node 20+, and optionally Docker Desktop (Postgres/PostGIS) and Azure CLI/`azd` for deployment.
+
+### 0. One-click Windows
+
+Double-click **`SadakSaarthi.exe`** in the repo root if it exists. It starts the backend, waits until it answers, and opens `http://127.0.0.1:8000/` (dashboard, `/field`, `/docs`). Close its window or press **Q** to stop. Logs go to `logs\backend.log`.
+
+Build the launcher once with `deploy\windows\build-exe.bat`; build the UI once with `scripts\build-ui.bat`. Prefer a console? `scripts\start_demo.bat` does the same checks and also accepts `dev` (Vite) and `camera`.
 
 ### 1. Backend
 
-Windows PowerShell often blocks `activate.ps1`. Call the venv executable:
-
 ```bat
-cd backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Or run `scripts\run-backend.cmd`.
-
-```bash
 cd backend
 python -m venv .venv
 .\.venv\Scripts\pip.exe install -r requirements.txt
 copy ..\.env.example .env
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-OpenAPI: http://127.0.0.1:8000/docs · Health: http://127.0.0.1:8000/health (`rdd` should be `REAL` when `backend/app/weights/rdd_india.onnx` is present).
+Windows PowerShell often blocks `activate.ps1`. Calling the venv executable directly avoids it.
 
-No training needed on a fresh clone: the deploy ONNX (`backend/app/weights/rdd_india.onnx`, YOLOv8s 640 CPU) and the honesty `metrics.json` files are tracked in git. Training weights (`models/**/*.pt`, `runs/`, `data/`) are gitignored — see [models/README.md](models/README.md) to reproduce them.
+- OpenAPI: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health` — `rdd` should be `REAL`
+- Dashboard: `http://127.0.0.1:8000/`
+- Phone: `http://127.0.0.1:8000/field`
 
-If Docker Desktop is running:
+With Docker Desktop:
 
 ```bash
 docker compose up -d postgres
 # DATABASE_URL=postgresql+psycopg://urbansense:urbansense@localhost:5432/urbansense
 ```
 
-Without Postgres the API **falls back to SQLite**. Fusion still uses haversine.
+Without Postgres, the API falls back to SQLite in development. Fusion still uses haversine.
 
-### 2. Dashboard (dev)
+### 2. Dashboard in dev mode
 
 ```bash
 cd dashboard
@@ -151,173 +307,139 @@ npm install
 npm run dev
 ```
 
-http://localhost:5173 — ICCC login as admin. Phone booth: http://localhost:5173/field (needs a PIN armed on the desk).
+Open `http://localhost:5173`. Vite proxies `/api` and copies `backend/app/weights/rdd_india.onnx` to `dashboard/public/weights/rdd_web.onnx`, plus ONNX Runtime WASM to `public/ort/`.
 
-Vite copies `backend/app/weights/rdd_india.onnx` → `dashboard/public/weights/rdd_web.onnx` and ORT wasm → `public/ort/`.
+### 3. Phone against the local API
 
-### 3. Phone against local API
+Run uvicorn with `--host 0.0.0.0`. On a phone on the same Wi-Fi, open:
 
-Run uvicorn `--host 0.0.0.0`. On the phone open `http://<this-PC-LAN-IP>:8000/field` after packaging the dashboard into `backend/static_dash`, **or** use the Vite origin if the phone can reach `:5173` and the `/api` proxy.
-
-### Maps (optional)
-
-No key is needed. Without one the dashboard draws **OpenStreetMap** tiles in the browser (internet required). OSM's tile policy forbids heavy use, so use it for testing and light demos, not for a public site.
-
-To use another provider, put its raster tile URL template in `backend\.env` and restart the backend (the URL below is only an example: copy the exact one from your provider's dashboard):
-
-```
-MAP_TILE_URL=https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=YOUR_KEY
-MAP_TILE_PROVIDER=MapTiler
-MAP_TILE_ATTRIBUTION=<a href="https://www.maptiler.com/copyright/">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap contributors</a>
+```text
+http://<this-PC-LAN-IP>:8000/field
 ```
 
-- The template needs `{z}`, `{x}` and `{y}` (`{s}` and `{r}` are optional). Put the key itself in the URL.
-- The **server** fetches the tiles. The browser only sees `/maps/tiles/...?ticket=...`, so the key never reaches it, and it is masked in logs.
-- Make the key without an HTTP-referrer restriction (the server sends no referrer). Credit the provider in `MAP_TILE_ATTRIBUTION`: plain text or `https` links, anything else is escaped.
-- Order: `MAP_TILE_URL`, then `AZURE_MAPS_SUBSCRIPTION_KEY`, then OpenStreetMap. A template that cannot be used is ignored, and `/maps/config` says why.
-- Only tiles change. Place names (`/maps/place`) still need an Azure Maps key.
+Use the built dashboard served by FastAPI, or the Vite origin if the phone can reach port `5173` and the `/api` proxy. Allow camera and GPS; the first overlay load can take 10–20 seconds while the WASM weights load.
 
 ### 4. Tests
 
 ```bash
 cd backend
-python -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q     # 234 passed
 cd ../dashboard
 npm run build
 ```
 
+### Common fixes
+
+| Symptom | Fix |
+| --- | --- |
+| `activate.ps1` is blocked | Call `.\.venv\Scripts\python.exe` directly. |
+| `npm.ps1` is blocked | Use `npm.cmd run dev`, or run from `cmd`. |
+| Port 8000 is already in use | Stop the old uvicorn process; do not start a second copy. |
+| Phone cannot reach the API | Same Wi-Fi, `--host 0.0.0.0`, allow port 8000 through the firewall. |
+| Overlay never shows boxes | Wait for the WASM weights, hard-refresh, and confirm `rdd_web.onnx` exists. |
+| Login rejected on Azure | `APP_ENV=production` refuses the seeded demo password. Use the private host password. |
+
 ---
 
-## Ship to Azure
+## API
 
-One click, nothing is deployed for you:
+The full OpenAPI schema is at `/docs`. Selected routes:
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| `POST` | `/auth/login` · `/auth/field-booth` · `/auth/field-join` | Officer login, arm a phone, join with PIN |
+| `GET` | `/health` · `/ai/capabilities` · `/weights/manifest.json` | Liveness, honesty map, deployed model metadata |
+| `POST` | `/ingest/phone/still` · `/ingest/phone/probe` | Official still; pre-check without a ticket |
+| `GET` | `/ingest/repair-due` | Verify-still prompt within 40 m of a repaired cell |
+| `GET` | `/events` · `/events/{id}` · `/events/export.csv` | Register, detail, field CSV |
+| `POST` | `/events/{id}/verify` · `/work-orders` … | Human endorsement and repair loop |
+| `POST` | `/citizen/report` · `GET /citizen/tickets?claim=…` | Report without login; claim-token status |
+| `GET/POST` | `/sensor-nodes` · `/sensor-nodes/heartbeat` | Fleet sensor health |
+| `WS` | `/ws/events` · `/ws/live` · `/ws/field-live` | Desk events, live ticks, phone overlay stream |
+
+---
+
+## Repository map
+
+```text
+backend/        FastAPI API, fusion, seed, tests, built UI, deployed ONNX
+dashboard/      React ICCC desk and the /field phone page
+ml/             Road-damage training, evaluation, export, metrics, reports
+ai/             Perception adapters (vehicles, ANPR, mapping) and camera helpers
+data/           Datasets (not in git) — see data/README.md
+deploy/         Azure zip builder, Windows launchers, local Kubernetes
+infra/          Azure Bicep; azure.yaml points here
+docs/           Jury script, coverage matrix, model report, deployment checklist
+scripts/        Dev helpers: start_demo, build-ui, run-*, backup-db
+shared/         Cross-client JSON schemas
+assets/         Demo images and README artwork
+storage/        Runtime evidence (not in git)
+```
+
+Training weights (`ml/models/**/*.pt`, `runs/`), datasets, `.env`, and the built `SadakSaarthi*.exe` files are not tracked.
+
+---
+
+## Deploy to Azure
 
 ```bat
 deploy\azure\package-azure.bat
 ```
 
-It builds the dashboard, runs the backend tests (stops if one fails) and writes `dist\azure\sadaksaarthi-api-<time>.zip` with a `.sha256` next to it. The zip holds only `backend/app`, `alembic`, the built UI (`static_dash`), the RDD ONNX and `requirements.txt`. `.env`, `*.db`, `.venv` and `tests` are never in it, and the script refuses to write the zip if one slips in. At the end it prints the exact command to deploy that zip:
+The script builds the dashboard, runs the backend tests (stops on failure), and writes `dist\azure\sadaksaarthi-api-<time>.zip` with a `.sha256`. The zip contains `backend/app`, `alembic`, the built `static_dash` UI, `models/road_damage/metrics.json`, `requirements.txt`, the RDD ONNX, and `build_info.json`. `.env`, `*.db`, `.venv`, and tests are excluded; the script refuses to write a zip if one slips in.
 
 ```powershell
 az webapp deploy --resource-group rg-urbansense --name app-urbansense-yngmbk --src-path dist\azure\<the zip> --type zip
-# or let azd package and deploy it itself:
+# or let azd package and deploy it:
 azd deploy api
 ```
 
-`scripts\ship-ui.ps1` is the older azd-only path (packages the dashboard, then `azd deploy`, not `azd up`). Full checklist, app settings and the production switches: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-- App Service `app-urbansense-yngmbk`, plan B3 (4 CPU / 7 GB, Always On), RG `rg-urbansense`, Southeast Asia.
-- Do **not** change App Settings in parallel with a deploy (Oryx restart mid-build → 503).
-- After deploy: `/health` → `ok`, `rdd: REAL`; `/weights/manifest.json` → `imgsz: 640`.
-- Stop `rg-urbansense` after the demo so student credits do not drain.
-
-A GPU sidecar (Container Apps T4) is **not** in this stack. App Service cannot grow CUDA. See the honesty table.
-
----
-
-## Features
-
-- Observation vs fused **UrbanEvent**
-- Deterministic spatial-temporal fusion (40 m / 6 h, source diversity; not averaged confidence)
-- JWT + roles: SUPER_ADMIN, ADMIN, INSPECTOR, OPERATOR; field PIN scope
-- Phone overlay → live desk boxes; Azure still → official event
-- Still gates: GPS-accuracy, jury-corridor, and speed-breaker checks before a ticket is filed
-- Repair loop: work order → `RE_VERIFICATION` → next bus in 40 m is asked for a verify still (`GET /ingest/repair-due`)
-- Citizen desk: report without login, claim-token tickets with `waiting` / `confirmed` / `repaired`
-- ICCC export: `GET /events/export.csv` (field tickets only, seed rows skipped)
-- Field outbox: queued stills retry from `localStorage` when the network drops
-- Demo passwords (`UrbanSense@2026`) work only with `APP_ENV=development`
-- Assets (digital passport) + QR lookup
-- Work orders + repair verification
-- Sensor heartbeats (`POST /sensor-nodes/heartbeat`)
-- Local backup: `scripts\backup-db.ps1` (pg_dump for Postgres, file copy for SQLite)
-- Demo seed: buses including BUS-042 / BUS-017, events, assets, work orders
-- Privacy: restricted evidence flags, masked plates, audit logs (blur pipeline is **planned**)
-
----
-
-## Tech stack
-
-| Layer | Choice |
+| | |
 | --- | --- |
-| ICCC | React 18 + Vite 6 + Leaflet + Recharts, served from `backend/static_dash` |
-| Phone booth | Same SPA at `/field` + `onnxruntime-web` worker |
-| API | FastAPI + SQLAlchemy 2 + Pydantic v2 + JWT |
-| Data | PostgreSQL/PostGIS (Azure / Docker) or SQLite fallback |
-| Realtime | `/ws/events`, `/ws/live`, `/ws/field-live` |
-| Cloud RDD | `onnxruntime` CPU, `rdd_india.onnx` |
-| Phone RDD | `rdd_web.onnx` (copy of the same family), WASM |
-| Infra | Azure Bicep + `azd` (`azure.yaml`) |
+| Host | Linux App Service, plan **B3** (4 CPU / 7 GB, Always On) |
+| Resource group | `rg-urbansense`, Southeast Asia |
+| Runtime | `PYTHON|3.12` |
+| Post-deploy check | `/health` → `ok`, `rdd: REAL`; `/weights/manifest.json` → `imgsz: 640` |
+| Cost control | Stop `rg-urbansense` after the demo; a stopped app returns `403` |
+| GPU | **None.** App Service cannot grow CUDA; a T4 sidecar is a separate host. |
+
+Do not change App Settings while a deploy is running — the Oryx restart can answer `503`. Full checklist: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
-## Folder structure
+## Limits, stated plainly
 
-```
-backend/        FastAPI API. Also serves the built dashboard and /field (backend/static_dash)
-dashboard/      React source: ICCC desk and the /field phone page
-ai/             Perception package (road damage, ANPR, vehicles) and local camera helpers
-infra/          Azure Bicep (azure.yaml at the root points here)
-deploy/
-  azure/        package-azure.bat -> dist/azure/*.zip for App Service
-  windows/      SadakSaarthi.exe launcher: source and build-exe.bat
-ml/             Everything for the road-damage model
-  scripts/      prepare_*, train_rdd, eval_rdd, export_*, watch_training
-  models/       weights, metrics.json, EVAL.md, training runs (weights are not in git)
-data/           Datasets (25 GB, not in git). See data/README.md
-third_party/    Reference repos used as a component library (not in git)
-docs/           Jury script, PS 26124 coverage matrix, design notes
-scripts/        Dev helpers: start_demo.bat, build-ui.bat, run-*.cmd, backup-db, package-dashboard
-shared/         Cross-client JSON schemas
-assets/         Demo images (plates)
-storage/        Runtime evidence (not in git)
-SadakSaarthi.exe   Built by deploy\windows\build-exe.bat (not in git)
-```
+- **No labelled Indian field set.** The model is measured on RDD India (in-distribution) and a clean UK Kent holdout; neither is a field guarantee.
+- **The phone overlay is a preview.** The official record is the Azure still, not the box you see on the windshield.
+- **One still plus one short clip per event.** There is no continuous video upload. A longer pre-roll + 60-second event clip is on the roadmap; the deployed path records a ~2-second rolling clip with the still.
+- **CPU only on App Service.** Faster inference needs a separate GPU host; a plan SKU bump does not add CUDA.
+- **SQLite fallback has no PostGIS GIST indexes.** Haversine fusion still runs.
+- **Some analytics are seeded or simulated.** Route delay and OD are empty without a real AVL feed; waterlogging is simulated; Indian signs are disabled.
+- **Demo security is demo security.** Default passwords and `SECRET_KEY` are for local/jury use. `APP_ENV=production` refuses the seeded password.
+- **No load test, penetration test, or dependency audit has been run.** This is an evaluation prototype, not a live city deployment.
 
-## API (selected)
+---
 
-| Method | Path |
+## Documentation
+
+| Document | What it answers |
 | --- | --- |
-| POST | `/auth/login` `/auth/field-booth` `/auth/field-join` |
-| GET | `/health` `/ai/capabilities` `/weights/manifest.json` |
-| GET/POST | `/sensor-nodes` `/sensor-nodes/heartbeat` |
-| POST | `/ingest/phone/still` (official still) `/ingest/phone/probe` (pre-check, no ticket) |
-| GET | `/ingest/repair-due` (verify-still prompt inside 40 m of a repaired cell) |
-| GET | `/events` `/events/{id}` `/events/export.csv` (field CSV, seed rows skipped) |
-| POST | `/citizen/report` (no login) · GET `/citizen/tickets?claim=…` (`waiting`/`confirmed`/`repaired`) |
-| POST | `/events/{id}/verify` `/work-orders` … |
-| WS | `/ws/events` `/ws/live` (ICCC) · `/ws/field-live` (phone, field JWT) |
+| [PRODUCT.md](PRODUCT.md) | Product brief and PPT-ready story |
+| [PROJECT.md](PROJECT.md) | Full problem, data model, fusion, APIs, status |
+| [docs/JURY_8MIN.md](docs/JURY_8MIN.md) | Eight-minute jury walk, step by step |
+| [docs/PS26124_COVERAGE_MATRIX.md](docs/PS26124_COVERAGE_MATRIX.md) | Every BEL requirement, mechanism, status, and evidence |
+| [docs/MODEL_OPTIMIZATION_REPORT.md](docs/MODEL_OPTIMIZATION_REPORT.md) | Full pothole experiment, metrics, parity, deployment |
+| [ml/models/road_damage/EVAL.md](ml/models/road_damage/EVAL.md) | Honest evaluation log, including what the numbers do not prove |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Azure build, settings, post-deploy checks, rollback |
+| [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) | Perception adapters, vehicles, ANPR, mapping |
+| [backend/app/weights/README.md](backend/app/weights/README.md) | Weight checksum, measured quality, parity, rollback |
 
 ---
 
-## Implemented vs planned
+## Credits
 
-| Area | Status |
-| --- | --- |
-| Split ICCC vs `/field` | IMPLEMENTED |
-| Phone WASM overlay + live desk | IMPLEMENTED (preview; official ticket is the Azure still) |
-| Azure RDD still (YOLOv8s 640 CPU) | IMPLEMENTED (REAL) |
-| Independent-bus confirm + absence expire | IMPLEMENTED (RULE_BASED) |
-| Work order + repair verify/reopen | IMPLEMENTED |
-| Still gates + repair-due prompt + events CSV + citizen claim tickets | IMPLEMENTED (RULE_BASED) |
-| Azure App Service (API + dashboard) | IMPLEMENTED |
-| Composio officer mail | DISABLED until Gmail OAuth + `COMPOSIO_NOTIFY_TO` |
-| Officer SMS webhook | REAL when `OFFICER_SMS_WEBHOOK` is set, else DISABLED (fires only on `FLEET_CONFIRMED`) |
-| App Service GPU / live RTSP on Azure | NOT AVAILABLE (by platform) |
-| Face/plate blur vision | FUTURE (flags + audit only) |
-| Indian sign classifier | DISABLED |
-| Waterlogging net | SIMULATED |
+Built for **SIH 2026 · BEL Problem Statement 26124**.
 
----
+The road-damage model builds on RDD2022 / CRDDC and the University of Kent pothole photographs (CC BY 4.0), trained with [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) and served with [ONNX Runtime](https://onnxruntime.ai/). The stack also uses FastAPI, React, Leaflet, Recharts, PostgreSQL/PostGIS, and Azure App Service.
 
-## Known limitations
-
-- Overlay is a windshield preview. Do not treat phone boxes as the municipal record.
-- Linux App Service has no GPU. Faster stills need a separate T4 host, not a plan SKU bump.
-- SQLite fallback has no PostGIS GIST indexes (haversine still runs).
-- Route delay charts use seeded durations when trips have no AVL.
-- Default passwords and `SECRET_KEY` are for the jury host only. Seeded demo passwords are refused with `APP_ENV=production`. Never commit `.env` or API keys.
-
-## License
-
-SIH 2026 evaluation prototype. Demonstration data — not a live city deployment. Stop `rg-urbansense` after judging.
+This repository is an evaluation prototype. Demonstration data is labelled; third-party datasets, weights, and libraries keep their own licences.
