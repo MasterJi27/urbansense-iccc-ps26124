@@ -44,6 +44,9 @@ Cities already own the buses, the drivers, the routes, and the inspection staff.
 
 SadakSaarthi builds that chain. Every scheduled bus becomes a mobile sensing unit. A phone on the windshield watches the road and sends one still when it sees damage. Azure scores the official image. The backend fuses sightings into one event, waits for a second independent bus, and closes the loop with a work order, a repair, and a re-sense.
 
+> [!NOTE]
+> The visible wordmark is **SADAKSAARTHI**. Seeded emails, the Python package, and the Azure hostname still say `urbansense`; those are identifiers, not a second product.
+
 It is deliberately **not**:
 
 - continuous video uploaded to the cloud;
@@ -163,7 +166,7 @@ Every API payload carries `ai_status`. This table is the short version of [docs/
 | Phone windshield boxes | **RULE_BASED preview** | On-device `rdd_web.onnx` WASM. Road-band + IoU tracker. Same weights, not a new test mAP, not the municipal record. |
 | Fleet confirm / absence / repair verify | **RULE_BASED** | Second independent bus in 40 m / 6 h. Later clear passes expire a rumour or verify a repair. |
 | Still gates | **RULE_BASED** | GPS accuracy worse than 25 m → `400`; outside the jury corridor → `400`; speed-breaker asset within 25 m → `409`. |
-| ANPR / vehicle tracking | **REAL** (AI layer) | Plate + confidence + GPS + time; masked until ADMIN / INSPECTOR. Assists authorities, does not accuse. |
+| ANPR / vehicle tracking | **REAL** (optional AI layer) | Validated adapters in `ai/`; install `ai/requirements-ai.txt`. Plate + confidence + GPS + time; masked until ADMIN / INSPECTOR. Not the pothole ticket path. |
 | Live desk ticks | **REAL transport** | Phone `/ws/field-live` → ICCC `/ws/live` plus REST poll. Tens of milliseconds, not 1 ms. |
 | Officer email | **DISABLED** | Composio mails only on `FLEET_CONFIRMED`; needs Gmail OAuth and `COMPOSIO_NOTIFY_TO`. |
 | Officer SMS | **REAL when configured** | Plain webhook `POST {"text","event_id"}` on `FLEET_CONFIRMED`. Empty URL = off; the ticket still saves. |
@@ -263,7 +266,7 @@ The full experiment, including v1/v2 selection, bootstrap intervals, and the dep
 
 ## Quick start
 
-**Fresh clone needs no training.** The deploy ONNX and honesty `metrics.json` files are tracked in git. Training weights (`*.pt`, runs, datasets) are gitignored.
+**Fresh clone needs no training.** The deploy ONNX and honesty `metrics.json` files are tracked in git. Training weights (`*.pt`, runs, datasets) are gitignored. Run `scripts\build-ui.bat` once if you want FastAPI to serve the built dashboard; Vite dev mode does not need it.
 
 **Prerequisites:** Python 3.12+, Node 20+, and optionally Docker Desktop (Postgres/PostGIS) and Azure CLI/`azd` for deployment.
 
@@ -285,10 +288,10 @@ copy ..\.env.example .env
 
 Windows PowerShell often blocks `activate.ps1`. Calling the venv executable directly avoids it.
 
-- OpenAPI: `http://127.0.0.1:8000/docs`
+- OpenAPI: `http://127.0.0.1:8000/docs` (development only; `APP_ENV=production` disables it)
 - Health: `http://127.0.0.1:8000/health` — `rdd` should be `REAL`
-- Dashboard: `http://127.0.0.1:8000/`
-- Phone: `http://127.0.0.1:8000/field`
+- Dashboard: `http://127.0.0.1:8000/` after `scripts\build-ui.bat`, or use Vite at `:5173`
+- Phone: `http://127.0.0.1:8000/field` after the build, or `http://localhost:5173/field` in Vite dev
 
 With Docker Desktop:
 
@@ -343,7 +346,7 @@ npm run build
 
 ## API
 
-The full OpenAPI schema is at `/docs`. Selected routes:
+The full OpenAPI schema is at `/docs` in development; `APP_ENV=production` disables it. Selected routes:
 
 | Method | Path | What it does |
 | --- | --- | --- |
