@@ -1,0 +1,11 @@
+.\.venv-train\Scripts\python.exe -u ml\scripts\train_rdd.py ^
+  --data data\rdd_pothole_opt_v2\data.yaml ^
+  --model ml\models\road_damage\YOLOv8s_RDD_india.pt ^
+  --epochs 120 --patience 30 ^
+  --batch 16 --imgsz 640 --workers 8 ^
+  --optimizer SGD --lr0 0.001 --freeze 0 --cos-lr ^
+  --close-mosaic 15 --mixup 0.1 ^
+  --class-balanced --domain-weight pothole_=2 --domain-weight India_=1.5 ^
+  --save-period 5 ^
+  --no-promote --skip-test --boot 0 ^
+  --name pothole_opt_v2

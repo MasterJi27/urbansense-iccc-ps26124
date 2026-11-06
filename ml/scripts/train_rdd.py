@@ -241,6 +241,7 @@ def main() -> int:
     parser.add_argument("--optimizer", default="SGD", help="SGD keeps lr0. auto ignores it.")
     parser.add_argument("--freeze", type=int, default=10)
     parser.add_argument("--patience", type=int, default=25)
+    parser.add_argument("--save-period", type=int, default=-1, help="save a checkpoint every N epochs (-1 = only best and last)")
     parser.add_argument("--close-mosaic", type=int, default=15)
     parser.add_argument("--name", default="india_best")
     parser.add_argument(
@@ -312,6 +313,7 @@ def main() -> int:
         "batch": args.batch,
         "workers": args.workers,
         "patience": args.patience,
+        "save_period": args.save_period,
         "optimizer": args.optimizer,
         "lr0": args.lr0,
         "lrf": 0.01,

@@ -14,6 +14,9 @@ Do not move it to another drive: the prepared splits use hard links to the extra
 | `rdd_hf_mb/` | Frozen random India plus China MotorBike only (4,629 train). Used for one older run. |
 | `hf_unified/` | Download from Hugging Face (`TamAko783/Unified_Road_Defect_Dataset`): the two tar files and `kept/`, the extracted Japan, Czech, US and China MotorBike subset. |
 | `hf_dronefreak_rdd2022/` | Another RDD2022 copy from Hugging Face. No script reads it now. |
+| `pothole_kent/` | Public pothole photos from the University of Kent (UK): 713 photos, 1,157 pothole boxes, many water-filled and close up. `download/` holds the original zip (checked against the published SHA-256), `raw/` the unpacked copy. CC BY 4.0, so credit it: Dib J., Sirlantzis K., Howells G., "An Annotated Water-Filled, and Dry Potholes Dataset for Deep Learning Applications", Mendeley Data v1, 2023, doi:10.17632/tp95cdvgm8.1 (paper: Data in Brief 48, 109206). |
+| `rdd_simsplit_pothole_mix/` | `rdd_simsplit_mix` plus the Kent photos in train (593 photos after dropping 50 exact duplicates), built by `ml/scripts/prepare_pothole_extra.py`. Val and test are the same India images. `data_kent_holdout.yaml` points at 70 Kent photos that are never trained on. The base mix files are hard links. Used for the earlier `pothole_ft_v1` run, not for v2. |
+| `rdd_pothole_opt_v2/` | v2 dataset built by `ml/scripts/prepare_pothole_opt_v2.py`: 16,374 train, 80 Kent val (checkpoint selection), 322 India val, 322 India test, 70 Kent holdout. Hard links; source data unchanged. |
 | `*.log` | Training and evaluation logs. |
 
 `data.yaml` files carry an absolute `path:`. The scripts rewrite it at run time (`eval_rdd.materialize_data_yaml`), so a moved

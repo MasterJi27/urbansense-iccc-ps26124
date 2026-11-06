@@ -1,0 +1,51 @@
+experiment: pothole_opt_v2
+created: 2026-11-02
+base_weights: ml/models/road_damage/YOLOv8s_RDD_india.pt
+data: data/rdd_pothole_opt_v2/data.yaml
+selection_split: kent_val (D40 only, 80 images / 117 boxes)
+final_splits:
+  - data/rdd_pothole_opt_v2/data_india_val.yaml (val)
+  - data/rdd_pothole_opt_v2/data.yaml (test)
+  - data/rdd_pothole_opt_v2/data_kent_holdout.yaml (test)
+train:
+  epochs: 120
+  patience: 30
+  batch: 16
+  imgsz: 640
+  optimizer: SGD
+  lr0: 0.001
+  lrf: 0.01
+  cos_lr: true
+  warmup_epochs: 3.0
+  weight_decay: 0.0005
+  freeze: 0
+  amp: true
+  workers: 8
+  cache: false
+  channels_last: false
+  save_period: 5
+augmentation:
+  mosaic: 1.0
+  close_mosaic: 15
+  mixup: 0.1
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  erasing: 0.4
+sampling:
+  class_balanced: true
+  rfs_thresh: 0.5
+  domain_weight:
+    pothole_: 2.0
+    India_: 1.5
+safety:
+  no_promote: true
+  skip_test_during_training: true
+  production_weights_untouched: true

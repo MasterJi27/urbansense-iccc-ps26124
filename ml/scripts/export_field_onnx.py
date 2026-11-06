@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RDD_PT = [
+    ROOT / "ml" / "models" / "road_damage" / "runs" / "pothole_opt_v2" / "weights" / "best.pt",
     ROOT / "ml" / "models" / "road_damage" / "YOLOv8s_RDD_india.pt",
     ROOT / "ml" / "models" / "road_damage" / "YOLOv8_Small_RDD.pt",
 ]
